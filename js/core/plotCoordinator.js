@@ -59,6 +59,7 @@ export class PlotCoordinator {
         afterPlotFun: ()=>{},
     };
 
+
     isSelected(entryIndex) {
         return this._entrySelectionTracker[entryIndex] === this._plots.size;
     }
@@ -186,22 +187,26 @@ export class PlotCoordinator {
     }
 
     addPlot(id, updateFunction) {
+        const existingPlot = this._plots.get(id);
+
+        if (existingPlot) {
+            // Update only the function if plot already exists
+            existingPlot.plotUpdateFunction = updateFunction;
+        } else {
+            for (let i = 0; i < this._entrySelectionTracker.length; i++) {
+                this._entrySelectionTracker[i]++;
+            }
+        }
+
+        // Initialize a new plot
         this._plots.set(id, {
             lastSelectionRange: [],
-            lastIndexesSelected: [],
+            lastIndexesSelected: Array(this._entries.length).fill(true),
             plotUpdateFunction: updateFunction,
         });
 
-        for (let i = 0; i < this._entries.length; i++) {
-            this._plots.get(id).lastIndexesSelected.push(true);
-        }
-
-        for (let i = 0; i < this._entrySelectionTracker.length; i++) {
-            this._entrySelectionTracker[i]++;
-        }
-
         this.updatePlotsView(id, []);
-        // an empty selection `[]` implicitly means that all entries are selected (no brush = full selection).
+        // empty selection [] => all entries selected
     }
 
     removePlot(id) {
@@ -318,6 +323,7 @@ export class PlotCoordinator {
 
         const elapsed = Date.now() - t0; // ms
         this.throttledUpdatePlotsView.report(elapsed);
+        this.throttledUpdatePlotsView.enable(!this.BENCHMARK.isActive);
     }
 
     fields() {

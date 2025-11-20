@@ -1,3 +1,4 @@
+import { wait } from "./miscUtils.js";
 
 function createSelection(a, b, numFields, catFields) {
     const numericalSelections = Array.from({ length: numFields }, (_, i) => ({
@@ -20,16 +21,20 @@ export async function brushBackAndForth(
     stepSize,
     numDimensionsSelected,
     catDimensionsSelected,
-    pcRef,
+    pcRefx,
     brushSize,
-    socketRef,
+    socketRefx,
     clientId,
     timeBetween,
     isStaggered,
-    numberOfClientBrushing
+    numberOfClientBrushing,
+    websocketCommunicationRef
 ) {
-    const startPos = 0.2;
-    const endPos = 0.8;
+    let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+    let pc = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name);
+
+    const startPos = 0.3;
+    const endPos = 0.7;
     let x = startPos;
     let forward = true;
 
@@ -64,7 +69,7 @@ export async function brushBackAndForth(
                 numDimensionsSelected,
                 catDimensionsSelected
             );
-            pcRef.pc.updatePlotsView(-1, selection);
+            pc.updatePlotsView(-1, selection);
         }
 
         // enforce minimum loop time
@@ -82,6 +87,12 @@ export async function brushBackAndForth(
     }
 
     // clear brush
-    pcRef.pc.updatePlotsView(-1, []);
+    await wait(300);
+    pc.updatePlotsView(-1, []);
+    await wait(300)
+    pc.updatePlotsView(-1, []);
+    await wait(300)
+    pc.updatePlotsView(-1, []);
+
 }
 

@@ -4,6 +4,10 @@ import { histogram } from "./plots/histogram.js";
 import { barPlot } from "./plots/barPlot.js";
 import { initializeUI } from "./uiLogic/initUI.js";
 import { benchMark } from "./core/benchMark.js";
+// import { scatterPlotSVG } from "./plots/scatterPlotSVG.js";
+// import { histogramSVG } from "./plots/histogramSVG.js";
+// import { barPlotSVG } from "./plots/barPlotSVG.js";
+// import { parallelCoordinatesSVG } from "./plots/parallelCoordinatesSVG.js";
 
 function run(){
     let plots = [
@@ -11,9 +15,14 @@ function run(){
         histogram,
         barPlot,
         parallelCoordinates,
+        // scatterPlotSVG,
+        // histogramSVG,
+        // barPlotSVG,
+        // parallelCoordinatesSVG,
+        // scatterPlotly
     ];
 
-    let ip = "186.153.49.206";
+    let ip = "181.1.73.207";
     let url = `ws://${ip}:5226/`;
     const BENCHMARK = false;
 

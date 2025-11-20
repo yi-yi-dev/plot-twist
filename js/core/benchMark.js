@@ -7,7 +7,12 @@ import { createFieldGroups, deleteFieldGroups, sendClientInfo, setupSelectionBro
 import { brushBackAndForth } from "./benchMarkUtils/brushing.js";
 import { loadLayout } from "../uiLogic/gridUtils.js";
 import { sendBenchMarkTimings, sendEndTrigger, sendStartTrigger, waitForEndTrigger, waitForStartTrigger } from "./benchMarkUtils/webSocketPassiveCommunication.js";
-
+import { websocketCommunication } from "./websocketCommunication.js";
+import {
+    generateConfigsSinglePlotForCrossDSLinks, singleBarLayout,
+    singleHistLayout, singleParLayout,
+    singleScatterLayout,
+} from "./benchMarkUtils/createLayout.js";
 
 // TODO: change layout export to include dataset it came from
 // TODO: add multiple plots in same client functionality
@@ -21,27 +26,32 @@ import { sendBenchMarkTimings, sendEndTrigger, sendStartTrigger, waitForEndTrigg
 
 export async function benchMark(plots, url) {
     let clientId = prompt("Enter clientId:", "");
+    // let clientId = 1;
     clientId = Number(clientId);
 
     // BASE CASE------------------------------------------------------------------------------------------------------//
-    let timeBetween = 70; // 70
+    // let timeBetween =15500; // 70
+    // let waitBetweenTestDuration = 20*1000;
+    // let testDuration = 900*1000; // 40
+
+    let timeBetween =70; // 70
     let waitBetweenTestDuration = 5*1000;
+    let testDuration = 60*1000; // 40
     let isStaggered = false;
-    let testDuration = 20*1000; // 40
     const baseConfig = {
         dataDistribution: "evenly distributed",
-        plotsAmount: 4,
+        plotsAmount: 1,
         numColumnsAmount: 30,
         catColumnsAmount: 5,
-        entriesAmount: 1000,
+        entriesAmount: 10_000,
         numDimensionsSelected: 2,
         catDimensionsSelected: 0,
-        numFieldGroupsAmount: 2,
-        catFieldGroupsAmount: 1,
+        numFieldGroupsAmount: 1,
+        catFieldGroupsAmount: 0,
         brushSize: 0.4,
         stepSize: 0.04,
-        numberOfClientBrushing: 2,
-        numberOfDataSets: 2,
+        numberOfClientBrushing: 1,
+        numberOfDataSets: 1,
         testDuration: testDuration,
         dataSetNum: null,
         clientId,
@@ -51,22 +61,33 @@ export async function benchMark(plots, url) {
     baseConfig.dataSetNum = clientId % baseConfig.numberOfDataSets;
     let isCustomLayoutSelected = false;
     let layoutData;
+    let useCrossDSLinks = false;
 
     // BENCHMARK CONFIGS HERE-----------------------------------------------------------------------------------------//
     let modifiedConfigs;
-    // modifiedConfigs = [{ ...baseConfig }];
+    modifiedConfigs = [{ ...baseConfig }];
     // modifiedConfigs = layout.generateConfigsSinglePlot(baseConfig);
+
     // modifiedConfigs = layout.generateConfigsPassFailMatrix(baseConfig);
-    // modifiedConfigs = layout.generateConfigsBrushSizeAndTypeOfData(baseConfig)
+    // modifiedConfigs = layout.generateConfigsBrushSizeAndTypeOfData(baseConfig);
     // modifiedConfigs = layout.generateConfigsAmountOfEntries(baseConfig);
     // modifiedConfigs = layout.generateConfigsBrushSizeVsStepSize(baseConfig);
     // modifiedConfigs = layout.generateConfigsStaggeredBrushingEventWith4Clients(baseConfig)
     // isStaggered = true;
     // modifiedConfigs = layout.generateConfigsForEventAnalysis2Clients(baseConfig)
-    modifiedConfigs = layout.generateConfigsBigIntervalBetweenBrushes(baseConfig);
-    timeBetween = 500;
-    // [isCustomLayoutSelected, layoutData] = layout.singleScatterLayout();
 
+    // modifiedConfigs = layout.generateConfigsBigIntervalBetweenBrushes(baseConfig); // THIS
+
+    // timeBetween = 500;
+    // [isCustomLayoutSelected, layoutData] = layout.singleScatterLayout();
+    // [isCustomLayoutSelected, layoutData]  = singleHistLayout();
+    // [isCustomLayoutSelected, layoutData]  = singleParLayout();
+    // [isCustomLayoutSelected, layoutData]  = singleBarLayout()
+
+
+
+    // modifiedConfigs = layout.generateConfigsSinglePlotForCrossDSLinks(baseConfig);
+    // useCrossDSLinks = true;
 
     // modifiedConfigs.splice(0, 57)
     // modifiedConfigs.unshift(modifiedConfigs[0]);
@@ -77,7 +98,8 @@ export async function benchMark(plots, url) {
     let brushIdRef = {
         brushId: 0,
     }
-    let socketRef;
+
+    let websocketCommunicationRef;
     let firstTimeInit = true;
     for (let i = 0; i < modifiedConfigs.length; i++) {
         const cfg = modifiedConfigs[i];
@@ -114,52 +136,113 @@ export async function benchMark(plots, url) {
 
         // set up the whole app in benchmarking mode
         if (firstTimeInit) {
-            socketRef = { socket: undefined };
+            // socketRef = { socket: undefined };
+            websocketCommunicationRef = {
+                eventsCoordinator: new websocketCommunication(plots, url)
+            };
+        }else{
+            websocketCommunicationRef.eventsCoordinator.serverCreatedLinks=[];
+            websocketCommunicationRef.eventsCoordinator._dataSets=[];
+            websocketCommunicationRef.eventsCoordinator._plotCoordinatorPerDataSet=[];
+            websocketCommunicationRef.eventsCoordinator._localSelectionPerDataset=[];
+            websocketCommunicationRef.eventsCoordinator._serverSelectionPerDataSet=[];
         }
-        const pcRef = { pc: undefined };
+
         benchMarkSetUp(
             table,
-            pcRef,
+            null,
             plots,
             url,
             layoutData,
-            socketRef,
-            cfg.dataSetNum,
+            null,
+            cfg.dataSetNum+(i*2), // TODO: change back
+            // 1,
             firstTimeInit,
             clientId,
-            brushIdRef
+            brushIdRef,
+            websocketCommunicationRef,
         );
-        await sendClientInfo(cfg, socketRef, clientId, pcRef);
+
+        await sendClientInfo(cfg, null, clientId, null, websocketCommunicationRef);
 
         // set up message sending when a brush selection is made
         if (!firstTimeInit) {
-            setupSelectionBroadcast(pcRef, socketRef, clientId, brushIdRef);
+            setupSelectionBroadcast(null, null, clientId, brushIdRef, websocketCommunicationRef);
         }
-        loadLayout(layoutData, pcRef, plots);
+        loadLayout(layoutData, websocketCommunicationRef);
 
+        let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+        let pc = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name);
         // set up dummy plot to have the benchmark make selections
-        pcRef.pc.BENCHMARK.isActive = true;
-        pcRef.pc.addPlot(-1,
-            (measurement, wasSent)=>{
-                sendBenchMarkTimings(socketRef, pcRef, brushIdRef, clientId, measurement, wasSent);
+        pc.BENCHMARK.isActive = true;
+        pc.onSelectionDo((selection, name) => {
+            websocketCommunicationRef.eventsCoordinator._localSelectionPerDataset[name] = selection;
+            if (websocketCommunicationRef.eventsCoordinator._socket.readyState === WebSocket.OPEN) {
+                let msg = {
+                    type: "BenchMark",
+                    benchMark: {
+                        action: "processBrushInServer",
+                        clientsSelections: [
+                            {
+                                selectionPerDataSet: [
+                                    {
+                                        dataSetName: name,
+                                        indexesSelected: selection,
+                                    },
+                                ],
+                            },
+                        ],
+                        clientId: clientId,
+                        brushId: brushIdRef.brushId,
+                    },
+
+                };
+                websocketCommunicationRef.eventsCoordinator._socket.send(JSON.stringify(msg));
             }
-        );
+        });
+        pc.addPlot(-1,()=>{});
+        pc.onBenchmarkDo(
+            (measurement,wasSent)=>{
+                sendBenchMarkTimings(null, null, brushIdRef, clientId, measurement, wasSent, websocketCommunicationRef);
+            },
+            (measurement,wasSent)=>{
+                sendBenchMarkTimings(null, null, brushIdRef, clientId, measurement, wasSent, websocketCommunicationRef);
+            }
+        )
+        // pc.addPlot(-1,
+        //     (measurement, wasSent)=>{
+        //         sendBenchMarkTimings(socketRef, pcRef, brushIdRef, clientId, measurement, wasSent);
+        //     }
+        // );
 
         // have the main client make all the field groups
         if (isMainClient) {
-            for (let dataSetNum = 0; dataSetNum < cfg.numberOfDataSets; dataSetNum++) {
+            if(cfg.numberOfDataSets>=2 && useCrossDSLinks){
+
                 await createFieldGroups(
-                    socketRef,
+                    null,
                     cfg.numFieldGroupsAmount,
                     cfg.catFieldGroupsAmount,
-                    dataSetNum
+                    null,
+                    websocketCommunicationRef,
+                    cfg.numberOfDataSets,
+                    i*2
+                );
+            }else{
+                deleteFieldGroups(
+                    null,
+                    cfg.numFieldGroupsAmount,
+                    cfg.catFieldGroupsAmount,
+                    null,
+                    websocketCommunicationRef
                 );
             }
-            await sendStartTrigger(socketRef);
+
+            await sendStartTrigger(null, websocketCommunicationRef);
         }
 
         // when the start trigger is received start brushing back and forth (if it is an active client)
-        await waitForStartTrigger(socketRef);
+        await waitForStartTrigger(null, websocketCommunicationRef);
 
         if (clientId <= cfg.numberOfClientBrushing) {
             await brushBackAndForth(
@@ -167,36 +250,39 @@ export async function benchMark(plots, url) {
                 cfg.stepSize,
                 cfg.numDimensionsSelected,
                 cfg.catDimensionsSelected,
-                pcRef,
+                null,
                 cfg.brushSize,
-                socketRef,
+                null,
                 clientId,
                 timeBetween,
                 isStaggered,
-                cfg.numberOfClientBrushing
+                cfg.numberOfClientBrushing,
+                websocketCommunicationRef
             );
+            // await wait(60*60*1000);
         }
 
         // have the main client clean up and send the end trigger
         if (isMainClient) {
-            for (
-                let dataSetNum = 0;
-                dataSetNum < cfg.numberOfDataSets;
-                dataSetNum++
-            ) {
-                deleteFieldGroups(
-                    socketRef,
-                    cfg.numFieldGroupsAmount,
-                    cfg.catFieldGroupsAmount,
-                    dataSetNum
-                );
-            }
+            // for (
+            //     let dataSetNum = 0;
+            //     dataSetNum < cfg.numberOfDataSets;
+            //     dataSetNum++
+            // ) {
+            deleteFieldGroups(
+                null,
+                cfg.numFieldGroupsAmount,
+                cfg.catFieldGroupsAmount,
+                null,
+                websocketCommunicationRef
+            );
+            // }
             await wait(waitBetweenTestDuration);
-            sendEndTrigger(socketRef);
+            sendEndTrigger(null, websocketCommunicationRef);
         }
 
         // finish when the end trigger is received
-        await waitForEndTrigger(socketRef, pcRef);
+        await waitForEndTrigger(null, null, websocketCommunicationRef);
         resetLayout();
         await wait(100);
         firstTimeInit = false;

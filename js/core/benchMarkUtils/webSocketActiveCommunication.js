@@ -1,9 +1,13 @@
 import { rangeSet } from "../rangeSet.js";
 
-export function setupSelectionBroadcast(pcRef, socketRef, clientId, brushIdRef) {
-    pcRef.pc.addPlot(0, () => {
+export function setupSelectionBroadcast(pcRefx, socketRefx, clientId, brushIdRef, websocketCommunicationRef) {
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+    let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+    let pc = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name);
+
+    pc.addPlot(0, () => {
         let selection = new rangeSet();
-        for (let [id, plot] of pcRef.pc._plots.entries()) {
+        for (let [id, plot] of pc._plots.entries()) {
             if (id !== 0) {
                 selection.addSelectionArr(JSON.parse(JSON.stringify(plot.lastSelectionRange)));
             }
@@ -24,13 +28,15 @@ export function setupSelectionBroadcast(pcRef, socketRef, clientId, brushIdRef) 
             },
         };
 
-        socketRef.socket.send(JSON.stringify(message));
+        socket.send(JSON.stringify(message));
     });
 }
 
-export function sendClientInfo(clientInfo, socketRef, clientId, pcRef) {
-    let socket = socketRef.socket;
-
+export function sendClientInfo(clientInfo, socketRefx, clientId, pcRefx, websocketCommunicationRef) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+    let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+    let fields = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name).fields();
     return new Promise((resolve) => {
         function sendClientInfoWhenOpen() {
             let message = {
@@ -40,7 +46,11 @@ export function sendClientInfo(clientInfo, socketRef, clientId, pcRef) {
                     clientInfo: clientInfo,
                     clientId,
                 },
-                dataSet: { name: pcRef.pc.dsName, fields: pcRef.pc.fields() },
+                dataSet: [{
+                    name: name,
+                    fields: fields
+                }],
+                // dataSet: { name: pcRef.pc.dsName, fields: pcRef.pc.fields() },
             };
 
             socket.send(JSON.stringify(message));
@@ -58,69 +68,56 @@ export function sendClientInfo(clientInfo, socketRef, clientId, pcRef) {
     });
 }
 
-// TODO:
-export function createFieldGroups(socketRef, numFieldGroupsAmount, catFieldsGroupsAmount, dataSetNum) {
-    let socket = socketRef.socket;
+// TODO: refactor to use new links
+export function createFieldGroups(socketRefx, numFieldGroupsAmount, catFieldsGroupsAmountx, dataSetNumx, websocketCommunicationRef, numberOfDataSets, dataSetId) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+    let links = [
+        // {
+        //     type: "Direct Link",
+        //     id: 1,
+        //     state: {
+        //         dataSet1: "BenchMarkData0",
+        //         dataSet2: "BenchMarkData1",
+        //         inputField: "Sqrt(Pow(X.field0 - Y.field0, 2) + Pow(X.field1 - Y.field1, 2)) <= 0.2"
+        //     },
+        //     isError: false,
+        // },
+        // {
+        //     type: "Bidirectional Link",
+        //     id: 2,
+        //     state: {
+        //             dataSet1: "BenchMarkData0",
+        //             dataSet2: "BenchMarkData1",
+        //             inputField: "Sqrt(Pow(X.field1 - Y.field2, 2) + Pow(X.field2 - Y.field2, 2)) <= 0.2"
+        //         },
+        //     isError: false,
+        // }
+    ];
+    // for (let dataSetNum = 0; dataSetNum < numberOfDataSets; dataSetNum++) {
+    let dataSetNum=0;
+        let newLink = {
+            type: "Direct Link",
+            id: 1,
+            state: {
+                dataSet1: `BenchMarkData${dataSetId+1}`,
+                dataSet2: `BenchMarkData${dataSetId}`,
+                inputField: `Sqrt(Pow(X.field${dataSetNum} - Y.field${dataSetNum}, 2) + Pow(X.field${dataSetNum+1} - Y.field${dataSetNum+1}, 2)) <= 0.1`
+            },
+            isError: false,
+        };
+        links.push(newLink);
+    // }
 
     return new Promise((resolve) => {
         function sendLinkGroups() {
-            // Loop for numerical
-            for (let i = 0; i < numFieldGroupsAmount; i++) {
-                let message = {
-                    type: "link",
-                    links: [{
-                        group: `fieldGroup${i}`,
-                        field: null,
-                        dataSet: `BenchMarkData${dataSetNum}`,
-                        action: "create",
-                    }],
-                };
+            let msg = {
+                type: "link",
+                links: links,
+                linksOperator: "And",
+            };
 
-                socket.send(JSON.stringify(message));
-            }
-
-            for (let i = 0; i < numFieldGroupsAmount; i++) {
-                let message = {
-                    type: "link",
-                    links: [{
-                        group: `fieldGroup${i}`,
-                        field: `field${i}`,
-                        dataSet: `BenchMarkData${dataSetNum}`,
-                        action: "update",
-                    }],
-                };
-
-                socket.send(JSON.stringify(message));
-            }
-
-            // Loop for categorical
-            for (let i = 0; i < catFieldsGroupsAmount; i++) {
-                let message = {
-                    type: "link",
-                    links: [{
-                        group: `catFieldGroup${i}`,
-                        field: null,
-                        dataSet: `BenchMarkData${dataSetNum}`,
-                        action: "create",
-                    }],
-                };
-
-                socket.send(JSON.stringify(message));
-            }
-
-            for (let i = 0; i < catFieldsGroupsAmount; i++) {
-                let message = {
-                    type: "link",
-                    links: [{
-                        group: `catFieldGroup${i}`,
-                        field: `catField${i}`,
-                        dataSet: `BenchMarkData${dataSetNum}`,
-                        action: "update",
-                    }],
-                };
-
-                socket.send(JSON.stringify(message));
-            }
+            socket.send(JSON.stringify(msg));
 
             resolve();
         }
@@ -135,37 +132,16 @@ export function createFieldGroups(socketRef, numFieldGroupsAmount, catFieldsGrou
     });
 }
 
-export function deleteFieldGroups(socketRef, numFieldGroupsAmount, catFieldsGroupsAmount, dataSetNum) {
-    let socket = socketRef.socket;
 
-    // Delete numerical field groups
-    for (let i = 0; i < numFieldGroupsAmount; i++) {
-        let message = {
-            type: "link",
-            links: [{
-                group: `fieldGroup${i}`,
-                field: `field${i}`,
-                dataSet: `BenchMarkData${dataSetNum}`,
-                action: "delete",
-            }],
-        };
+export function deleteFieldGroups(socketRefx, numFieldGroupsAmount, catFieldsGroupsAmount, dataSetNum, websocketCommunicationRef) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
 
+    let msg = {
+        type: "link",
+        links: [],
+        linksOperator: "And",
+    };
 
-        socket.send(JSON.stringify(message));
-    }
-
-    // Delete categorical field groups
-    for (let i = 0; i < catFieldsGroupsAmount; i++) {
-        let message = {
-            type: "link",
-            links: [{
-                group: `catFieldGroup${i}`,
-                field: `catField${i}`,
-                dataSet: `BenchMarkData${dataSetNum}`,
-                action: "delete",
-            }],
-        };
-
-        socket.send(JSON.stringify(message));
-    }
+    socket.send(JSON.stringify(msg));
 }

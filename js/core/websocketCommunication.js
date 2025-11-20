@@ -65,6 +65,7 @@ export class websocketCommunication {
                 type: "selection",
                 clientsSelections: [
                     {
+                        debugTimeSent: Date.now(),
                         selectionPerDataSet: [
                             {
                                 dataSetName: dsName,
@@ -95,8 +96,9 @@ export class websocketCommunication {
 
         this._socket.onmessage = ({ data }) => {
             const msg = JSON.parse(data);
-            // console.log(`Received ${msg.type}`);
-            // console.log(msg);
+            console.log(`Received ${msg.type}`);
+            console.log(msg);
+
             if (msg.type === "selection") {
                 // console.log(msg.clientsSelections);
                 let selection = msg.clientsSelections[0].selectionPerDataSet;
@@ -151,8 +153,9 @@ export class websocketCommunication {
         return this._plotsModules;
     }
 
-    sendDataSetInfo(dataSet, dataSetName){
+    sendDataSetInfo(dataSet, dataSetName) {
         let pc = this.getDataSetPlotCoordinator(dataSetName);
+
         // Find the current highest dataSetColorIndex
         const currentIndices = Object.values(this._dataSets).map(ds => ds.dataSetColorIndex ?? -1);
         let nextIndex = currentIndices.length ? Math.max(...currentIndices) + 1 : 0;
@@ -161,44 +164,90 @@ export class websocketCommunication {
             dataSetColorIndex: nextIndex,
         };
 
-        if (this._socket.readyState === WebSocket.OPEN) {
-            if (!dataSet.length) return { columns: [], rows: [] };
-            const columns = Object.keys(dataSet[0]);
-            const rows = dataSet.map(obj =>
-                columns.map(key =>
-                    // coerce everything to either number or string
-                    typeof obj[key] === 'number' ? obj[key] : String(obj[key])
-                )
-            );
-
-            let msg = {
-                type: "addDataSet",
-                dataSet: [
-                    {
-                        name: dataSetName,
-                        fields: pc.fields(),
-                        table: { columns, rows },
-                        length: pc.entries().length,
-                    }
-                ],
-            };
-            // console.log("Sent dataset",msg);
-            // console.log(JSON.stringify(msg));
-            this._socket.send(JSON.stringify(msg));
+        // Early return for empty dataset (keeps behavior sensible regardless of socket state)
+        if (!dataSet.length) {
+            this.updateStateOfPlotCoordinators();
+            return { columns: [], rows: [] };
         }
-        this.updateStateOfPlotCoordinators();
 
+        const columns = Object.keys(dataSet[0]);
+        const rows = dataSet.map(obj =>
+            columns.map(key => (typeof obj[key] === 'number' ? obj[key] : String(obj[key])))
+        );
+
+        const msg = {
+            type: "addDataSet",
+            dataSet: [
+                {
+                    name: dataSetName,
+                    fields: pc.fields(),
+                    table: { columns, rows },
+                    length: pc.entries().length,
+                }
+            ],
+        };
+
+        // Ensure a queue exists on the instance
+        this._sendQueue = this._sendQueue || [];
+
+        const flushQueue = () => {
+            // Only flush if socket is open
+            if (!this._socket || this._socket.readyState !== WebSocket.OPEN) return;
+            while (this._sendQueue.length) {
+                try {
+                    this._socket.send(JSON.stringify(this._sendQueue.shift()));
+                } catch (err) {
+                    // On send failure re-queue the message and stop flushing for now
+                    console.error("Failed to send queued message, will retry later:", err);
+                    // push back and break
+                    // (we re-insert at front)
+                    this._sendQueue.unshift(this._sendQueue.shift());
+                    break;
+                }
+            }
+            // remove listener flag so we can reattach if a new socket is assigned
+            this._openFlushAttached = false;
+        };
+
+        // If socket is open — send immediately
+        if (this._socket && this._socket.readyState === WebSocket.OPEN) {
+            this._socket.send(JSON.stringify(msg));
+        } else if (this._socket && this._socket.readyState === WebSocket.CONNECTING) {
+            // queue and attach a one-time open listener to flush
+            this._sendQueue.push(msg);
+            if (!this._openFlushAttached) {
+                const onOpen = () => {
+                    flushQueue();
+                    // remove listener after flushing
+                    if (this._socket) this._socket.removeEventListener('open', onOpen);
+                };
+                this._socket.addEventListener('open', onOpen);
+                this._openFlushAttached = true;
+            }
+        } else {
+            // socket is null, CLOSING, or CLOSED: queue the message and rely on higher-level code
+            // to call flushQueue (or reattach) after reconnecting/replacing this._socket.
+            // We still enqueue so the message isn't lost.
+            this._sendQueue.push(msg);
+            // Optionally expose flush function so external reconnection logic can call it:
+            this.flushPendingSends = flushQueue.bind(this);
+            console.warn("WebSocket not open; message queued. Call this.flushPendingSends() after reconnect.");
+        }
+
+        this.updateStateOfPlotCoordinators();
     }
 
-    addDataSet(dataSet, dataSetName) {
+    addDataSet(dataSet, dataSetName, broadcastSelection = true) {
         const existingIndex = this._plotCoordinatorPerDataSet.findIndex(pc => pc.dsName === dataSetName);
 
         // Create new PlotCoordinator
         const plotCoordinator = new PlotCoordinator();
         plotCoordinator.init(dataSet, dataSetName);
-        plotCoordinator.onSelectionDo((selection, name) => {
-            this.sendSelection(selection, name);
-        });
+        if(broadcastSelection){
+            plotCoordinator.onSelectionDo((selection, name) => {
+                this.sendSelection(selection, name);
+            });
+        }
 
         // Replace if exists, otherwise unshift
         if (existingIndex !== -1) {

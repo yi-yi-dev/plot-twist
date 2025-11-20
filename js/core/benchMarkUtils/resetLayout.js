@@ -17,31 +17,37 @@ export function resetLayout() {
                 <div class="indentFileUpload">
                     <label for="fileInput" class="custom-file-upload top-bar-button">
                         Upload data-set&nbsp;
-                        <img class="csv-icon" />
+                        <img src="assets/csv_icon.svg" alt="select CSV" class="csv-icon"/>
                     </label>
-                    <input type="file" id="fileInput" class="file-input" />
+                    <input
+                        type="file"
+                        id="fileInput"
+                        class="file-input"
+                        accept=".csv,text/csv"
+                    />
                 </div>
 
                 <button id="loadDemo" class="top-bar-button">
                     Load Demo&nbsp;
-                    <img class="csv-icon">
+                    <img src="assets/launch_icon.svg" class="csv-icon" alt="load demo">
                 </button>
 
                 <button id="exportLayoutButton" class="top-bar-button">
                     Save Layout&nbsp;
-                    <img class="csv-icon">
+                    <img src="assets/download_icon.svg" class="csv-icon" alt="download layout file">
                 </button>
 
                 <div id="loadLayoutButton" class="indentFileUpload">
                     <label for="layoutInput" class="custom-file-upload top-bar-button">
                         Load layout&nbsp;
-                        <img class="csv-icon">
+                        <img src="assets/upload_icon.svg" alt="upload layout file" class="csv-icon">
                     </label>
-                    <input type="file" id="layoutInput" class="file-input" />
+                    <input type="file" id="layoutInput" class="file-input" accept=".json,text/json"/>
                 </div>
 
             </div>
         </div>
+
 
         <div id="app-view">
             <div id="grid-container">
@@ -52,24 +58,36 @@ export function resetLayout() {
             </div>
         </div>
 
-        <div class="group-component">
-            <span class="group-title">
-                Cross data-set Field Groups
-            </span>
+        <div class="menu-wrapper">
+            <div class="group-component">
+                <div class="group-component-inner">
+                    <span class="group-title">
+                    Cross data-set links
+                    </span>
 
-            <div id="groups-list"></div>
+                    <div class="group-component-buttons">
+                        <button id="and-btn">And</button>
+                        <button id="or-btn">Or</button>
+                    </div>
+                </div>
 
-            <div class="add-group-container">
-                <label for="input-group-name">Group: </label>
-                <input type="text" id="input-group-name">
-                <button id="group-name-submit">Add Group</button>
+
+                <div id="groups-list"></div>
+
+                <div class="add-group-container">
+                    <label for="field-group-name">Link: </label>
+                    <select id="field-group-name">
+                    </select>
+                    <button id="group-name-submit">Add Link</button>
+                </div>
             </div>
+
+            <button id="slide-menu-btn">
+                <img src="assets/link_tonedDownPurple.svg" alt="Group links button">
+                <!--Field Groups-->
+            </button>
         </div>
 
-        <button id="slide-menu-btn">
-            <img alt="Group links button">
-            Field Groups
-        </button>
 
         <script type="module" src="/js/main.js"></script>
     `;

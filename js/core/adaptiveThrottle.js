@@ -4,16 +4,17 @@ export function makeAdaptiveThrottle(fn) {
         alpha = 0.20,
         leading = true,
         trailing = true;
+
     const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
     let delay = initialDelay;
     let ewma = initialDelay;
-    let lastInvoke = 0;       // timestamp of last actual invocation
+    let lastInvoke = 0;
     let timer = null;
     let pendingArgs = null;
     let pendingThis = null;
+    let enabled = true;   // <-- toggle flag
 
-    // track when the current delay value was set (for "how long it was the throttle amount")
     let delaySetAt = nowMs();
 
     async function doInvoke() {
@@ -23,7 +24,6 @@ export function makeAdaptiveThrottle(fn) {
         pendingArgs = pendingThis = null;
         const result = fn.apply(self, args);
         if (result && typeof result.then === 'function') await result;
-        // caller will call report(elapsedMs) to update EWMA
     }
 
     function schedule(ms) {
@@ -32,6 +32,10 @@ export function makeAdaptiveThrottle(fn) {
     }
 
     const wrapper = function(...args) {
+        if (!enabled) {
+            return fn.apply(this, args); // bypass throttling
+        }
+
         const now = nowMs();
         const remaining = delay - (now - lastInvoke);
 
@@ -50,16 +54,12 @@ export function makeAdaptiveThrottle(fn) {
         }
     };
 
-    // Caller manually reports measured elapsed (ms) at end of updatePlotsView
     wrapper.report = function(elapsedMs) {
+        if (!enabled) return; // ignore updates when disabled
         ewma = alpha * elapsedMs + (1 - alpha) * ewma;
         const newDelay = Math.max(initialDelay, Math.round(multiplier * ewma));
         if (newDelay !== delay) {
             const now = nowMs();
-            // const prevDelay = delay;
-            // const lastedMs = now - delaySetAt;
-            // // log the change and how long the previous delay value lasted
-            // console.log(`throttle delay: ${prevDelay}ms → ${newDelay}ms (previous lasted ${Math.round(lastedMs)} ms)`);
             delay = newDelay;
             delaySetAt = now;
             if (timer) {
@@ -74,9 +74,9 @@ export function makeAdaptiveThrottle(fn) {
     wrapper.getDelay = () => delay;
     wrapper.getEWMA = () => ewma;
 
-    wrapper.logCurrent = function() {
-        // const now = nowMs();
-        // console.log(`current throttle delay: ${delay} ms (active for ${Math.round(now - delaySetAt)} ms)`);
+    wrapper.enable = (state = true) => {
+        enabled = !!state;
+        if (!enabled) wrapper.cancel(); // clear pending work when disabling
     };
 
     wrapper.cancel = () => {

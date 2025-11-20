@@ -71,21 +71,45 @@ export function generateConfigsPassFailMatrix(config) {
     return configs;
 }
 
-export function generateConfigsSinglePlot(config) {
+export function generateConfigsSinglePlotForCrossDSLinks(config) {
     const configs = [];
 
     let firstTime = true;
 
-    for (let entries = 300; entries <= 2400; entries += 300) {
+    // let entries = 15000;
+    // {
+    for (let entries = 1000; entries <= 16_000; entries += 2_000) {
         const newConfig = { ...config };
         newConfig.plotsAmount = 1;
         newConfig.entriesAmount = entries;
         configs.push(newConfig);
         if(firstTime){
-            let firstCase = configs[0];
-            configs.push(firstCase);
-            configs.push(firstCase);
-            configs.push(firstCase);
+            // let firstCase = configs[0];
+            // configs.push(firstCase);
+            // configs.push(firstCase);
+            // configs.push(firstCase);
+            firstTime = false;
+        }
+    }
+
+    return configs;
+}
+
+export function generateConfigsSinglePlot(config) {
+    const configs = [];
+
+    let firstTime = true;
+
+    for (let entries = 1000; entries <= 10_000; entries += 1000) {
+        const newConfig = { ...config };
+        newConfig.plotsAmount = 1;
+        newConfig.entriesAmount = entries;
+        configs.push(newConfig);
+        if(firstTime){
+            // let firstCase = configs[0];
+            // configs.push(firstCase);
+            // configs.push(firstCase);
+            // configs.push(firstCase);
             firstTime = false;
         }
     }
@@ -100,22 +124,22 @@ export function generateConfigsBrushSizeAndTypeOfData(config) {
     const dataTypes = ["evenly distributed", "big clusters", "small clusters"];
 
     for (const x of dataTypes) {
-        for (let brushSize = 0.10; brushSize <= 0.40; brushSize += 0.04) {
+        // for (let brushSize = 0.10; brushSize <= 0.40; brushSize += 0.04) {
             const newConfig = { ...config };
             newConfig.plotsAmount = 1;
-            newConfig.entriesAmount = 1000;
+            newConfig.entriesAmount = 10_000;
             newConfig.dataDistribution = x;
-            newConfig.brushSize = brushSize;
+            // newConfig.brushSize = brushSize;
             configs.push(newConfig);
 
-            if (firstTime) {
-                const firstCase = configs[0];
-                configs.push(firstCase);
-                configs.push(firstCase);
-                configs.push(firstCase);
-                firstTime = false;
-            }
-        }
+            // if (firstTime) {
+            //     const firstCase = configs[0];
+            //     configs.push(firstCase);
+            //     configs.push(firstCase);
+            //     configs.push(firstCase);
+            //     firstTime = false;
+            // }
+        // }
     }
 
     return configs;
@@ -196,6 +220,74 @@ export function generateConfigsStaggeredBrushingEventWith4Clients(config) {
     return configs;
 }
 
+export function singleParLayout(){
+    let x = 0;
+    const layoutData = [{ col: 3, row: 3 }, []];
+
+    layoutData[1].push({
+        type: "Parallel Coordinates",
+        col: 1,
+        row: 1,
+        fields: [
+            { fieldName: "1st axis", fieldSelected: `field${x}` },
+            { fieldName: "2nd axis", fieldSelected: `field${x+1}` },
+            { fieldName: "3rd axis", fieldSelected: `field${x+2}` },
+            { fieldName: "4th axis", fieldSelected: `field${x+3}` },
+            { fieldName: "5th axis", fieldSelected: "" },
+            { fieldName: "6th axis", fieldSelected: "" },
+            { fieldName: "7th axis", fieldSelected: "" },
+            { fieldName: "8th axis", fieldSelected: "" },
+        ],
+        options: [
+        ],
+    });
+
+
+
+    return [true, layoutData];
+}
+
+export function singleHistLayout(){
+    let x = 0;
+    const layoutData = [{ col: 3, row: 3 }, []];
+
+    layoutData[1].push({
+        type: "Histogram",
+        col: 1,
+        row: 1,
+        fields: [
+            { fieldName: "bin-variable", fieldSelected: `field${x}` },
+        ],
+        options: [
+            { optionName: "y-axis log scale", optionCheckBox: false },
+        ],
+    });
+
+
+
+    return [true, layoutData];
+}
+
+export function singleBarLayout(){
+    let x = 0;
+    const layoutData = [{ col: 3, row: 3 }, []];
+
+    layoutData[1].push({
+        type: "Bar Plot SVG",
+        col: 1,
+        row: 1,
+        fields: [
+            { fieldName: "bin-variable", fieldSelected: `catField${x}` },
+        ],
+        options: [
+        ],
+    });
+
+
+
+    return [true, layoutData];
+}
+
 export function singleScatterLayout() {
     let x = 0;
     let y = 1;
@@ -209,7 +301,11 @@ export function singleScatterLayout() {
             { fieldName: "x-axis", fieldSelected: `field${x}` },
             { fieldName: "y-axis", fieldSelected: `field${y}` },
         ],
-        options: [],
+        options: [
+            { optionName: "linear regression", optionCheckBox: false },
+            { optionName: "Spearman coefficient", optionCheckBox: false },
+            { optionName: "Pearson coefficient", optionCheckBox: false },
+        ],
     });
 
     return [true, layoutData];

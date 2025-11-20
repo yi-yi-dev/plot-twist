@@ -32,10 +32,14 @@ export function createSocketMessageHandler({
 
 }
 
-export function sendBenchMarkTimings(socketRef, pcRef, brushIdRef, clientId, measurement, wasSent) {
+export function sendBenchMarkTimings(socketRefx, pcRefx, brushIdRef, clientId, measurement, wasSent, websocketCommunicationRef) {
     let message;
+    let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+    let pc = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name);
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+
     if(measurement === "postIndex") {
-        let timeToProcessBrushLocally = pcRef.pc.BENCHMARK.deltaUpdateIndexes;
+        let timeToProcessBrushLocally = pc.BENCHMARK.deltaUpdateIndexes;
         message = {
             type: "BenchMark",
             benchMark: {
@@ -48,7 +52,7 @@ export function sendBenchMarkTimings(socketRef, pcRef, brushIdRef, clientId, mea
         };
     }
     if(measurement === "postPlots") {
-        let timeToUpdatePlots = pcRef.pc.BENCHMARK.deltaUpdatePlots;
+        let timeToUpdatePlots = pc.BENCHMARK.deltaUpdatePlots;
         message = {
             type: "BenchMark",
             benchMark: {
@@ -62,12 +66,14 @@ export function sendBenchMarkTimings(socketRef, pcRef, brushIdRef, clientId, mea
         brushIdRef.brushId++;
     }
 
-    let socket = socketRef.socket;
+    // let socket = socketRef.socket;
     socket.send(JSON.stringify(message));
 }
 
-export function waitForStartTrigger(socketRef) {
-    const socket = socketRef.socket;
+export function waitForStartTrigger(socketRefx, websocketCommunicationRef) {
+    // const socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+
 
     return new Promise((resolve) => {
         function startHandler(evt) {
@@ -86,8 +92,12 @@ export function waitForStartTrigger(socketRef) {
     });
 }
 
-export function waitForEndTrigger(socketRef, pcRef) {
-    let socket = socketRef.socket;
+export function waitForEndTrigger(socketRefx, pcRefx, websocketCommunicationRef) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+    let name = Object.keys(websocketCommunicationRef.eventsCoordinator._dataSets)[0];
+    let pc = websocketCommunicationRef.eventsCoordinator.getDataSetPlotCoordinator(name);
+
     return new Promise((resolve) => {
         function handler(event) {
             const receivedData = JSON.parse(event.data);
@@ -98,16 +108,17 @@ export function waitForEndTrigger(socketRef, pcRef) {
                 console.log("   BenchMark Ended");
                 socket.removeEventListener("message", handler);
 
-                socketRef.socket.onmessage = function (event) {
+                socket.onmessage = function (event) {
                     const receivedData = JSON.parse(event.data);
                     switch (receivedData.type) {
                         case "link":
-                            populateGroups(
-                                receivedData.links,
-                                pcRef.pc.fields(),
-                                socketRef,
-                                pcRef
-                            );
+                            // TODO:
+                            // populateGroups(
+                            //     receivedData.links,
+                            //     pc.fields(),
+                            //     socketRef,
+                            //     pcRef
+                            // );
                             break;
                     }
                 };
@@ -120,8 +131,9 @@ export function waitForEndTrigger(socketRef, pcRef) {
     });
 }
 
-export function sendEndTrigger(socketRef) {
-    let socket = socketRef.socket;
+export function sendEndTrigger(socketRef, websocketCommunicationRef) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
 
     let message = {
         type: "BenchMark",
@@ -134,8 +146,10 @@ export function sendEndTrigger(socketRef) {
     console.log(">>END");
 }
 
-export function sendStartTrigger(socketRef) {
-    let socket = socketRef.socket;
+export function sendStartTrigger(socketRefx, websocketCommunicationRef) {
+    // let socket = socketRef.socket;
+    let socket = websocketCommunicationRef.eventsCoordinator._socket;
+
 
     return new Promise((resolve) => {
         function sendLinkGroups() {
