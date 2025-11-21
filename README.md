@@ -8,4 +8,4 @@ run $ npm install
 run $ npm run build
 run $ npm run preview
 
-![status](http://181.1.73.207:5000/resource/mltN6sheKtU.png)
+![status](http://181.1.73.207:8080/resource/mltN6sheKtU.png)
