@@ -260,53 +260,62 @@ export function createHistogram(fields, options, plotDiv, data, updatePlotsFun, 
 
     // Legend rendering (HTML overlay) - adapted from original without hover tooltips
     function renderLegend(allDataSets, colors) {
-        // Remove any old legend overlay
-        container.selectAll('.legend-overlay').remove();
+        // ensure safe array
+        const currentAll = Array.isArray(allDataSets) ? allDataSets : (allDataSets || []);
+        const rightOffset = (currentAll.length ? currentAll.length : 0) + 10 + "px";
 
-        const legendDiv = container
-            .append('div')
-            .attr('class', 'legend-overlay')
-            .style('position', 'absolute')
-            .style('right', (utils().allDataSets ? utils().allDataSets().length + 10 : 10) + 'px')
-            .style('top', -25 + 'px')
-            .style('display', 'flex')
-            .style('gap', '6px')
-            .style('z-index', 9999)
-            .style('pointer-events', 'auto');
+        // create/reuse overlay container
+        let legendDiv = container.select(".legend-overlay");
+        if (legendDiv.empty()) {
+            legendDiv = container.append("div")
+                .attr("class", "legend-overlay")
+                .style("position", "absolute")
+                .style("top", -25 + "px")
+                .style("display", "flex")
+                .style("gap", "6px")
+                .style("z-index", 9999)
+                .style("pointer-events", "auto");
+        }
+        // update position in case number of datasets changed
+        legendDiv.style("right", rightOffset);
 
         const swatchSize = 16;
         const itemHeight = 18;
 
-        const items = legendDiv.selectAll('div.legend-item')
-            .data(allDataSets, d => d);
-
+        // data join keyed by dataset name
+        const items = legendDiv.selectAll("div.legend-item").data(currentAll, d => d);
         items.exit().remove();
 
         const enter = items.enter()
-            .append('div')
-            .attr('class', 'legend-item')
-            .style('display', 'flex')
-            .style('align-items', 'center')
-            .style('cursor', 'pointer')
-            .style('height', itemHeight + 'px')
-            .on('click', function(event, d) {
-                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d); else hiddenDatasets.add(d);
-                renderLegend(allDataSets, colors);
+            .append("div")
+            .attr("class", "legend-item")
+            .style("display", "flex")
+            .style("align-items", "center")
+            .style("cursor", "pointer")
+            .style("height", itemHeight + "px")
+            // use pointerdown and stopPropagation so the brush can't steal the event
+            .on("pointerdown", function(event, d) {
+                event.stopPropagation();
+                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
+                else hiddenDatasets.add(d);
+                // update view; renderLegend will be called inside updateHistogram and reuse the container
                 updateHistogram();
             });
 
-        enter.append('div')
-            .attr('class', 'legend-swatch')
-            .style('width', swatchSize + 'px')
-            .style('height', swatchSize + 'px')
-            .style('border-radius', '7px')
-            .style('border', '1px solid #ccc');
+        enter.append("div")
+            .attr("class", "legend-swatch")
+            .style("width", swatchSize + "px")
+            .style("height", swatchSize + "px")
+            .style("border-radius", "7px")
+            .style("border", "1px solid #ccc");
 
-        enter.merge(items)
-            .select('.legend-swatch')
-            .style('background-color', d => colors[d] || fallbackColor(d))
-            .style('opacity', d => hiddenDatasets.has(d) ? 0.25 : 1);
+        // update existing + newly entered items
+        const merged = enter.merge(items);
+        merged.select(".legend-swatch")
+            .style("background-color", d => (colors && colors[d]) || fallbackColor(d))
+            .style("opacity", d => hiddenDatasets.has(d) ? 0.25 : 1);
     }
+
 
     // Brush behavior using d3.brush on overlaySvg
     function handleSelection({ selection }) {

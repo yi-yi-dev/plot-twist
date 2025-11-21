@@ -13,7 +13,7 @@ export function makeAdaptiveThrottle(fn) {
     let timer = null;
     let pendingArgs = null;
     let pendingThis = null;
-    let enabled = true;   // <-- toggle flag
+    let enabled = true;
 
     let delaySetAt = nowMs();
 

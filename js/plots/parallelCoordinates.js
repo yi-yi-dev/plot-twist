@@ -99,25 +99,37 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
     function renderLegend(allDataSets, colors) {
         const outer = d3.select(plotDiv);
         outer.style("position", "relative");
-        outer.selectAll(".legend-overlay").remove();
 
-        const legendDiv = outer
-            .append("div")
-            .attr("class", "legend-overlay")
-            .style("position", "absolute")
-            .style("right", utils().allDataSets ? (utils().allDataSets().length + 10 + "px") : "10px")
-            .style("top", -25 + "px")
-            .style("display", "flex")
-            .style("gap", "6px")
-            .style("z-index", 9999)
-            .style("pointer-events", "auto");
+        // safe length for positioning
+        const currentAll = Array.isArray(allDataSets) ? allDataSets : (allDataSets || []);
+        const rightOffset = (currentAll.length ? currentAll.length : 0) + 10 + "px";
+
+        // create the legend overlay once and reuse it
+        let legendDiv = outer.select(".legend-overlay");
+        if (legendDiv.empty()) {
+            legendDiv = outer.append("div")
+                .attr("class", "legend-overlay")
+                .style("position", "absolute")
+                .style("right", rightOffset)
+                .style("top", -25 + "px")
+                .style("display", "flex")
+                .style("gap", "6px")
+                .style("z-index", 9999)
+                .style("pointer-events", "auto");
+        } else {
+            legendDiv.style("right", rightOffset);
+        }
 
         const swatchSize = 16;
         const itemHeight = 18;
 
-        const items = legendDiv.selectAll("div.legend-item").data(allDataSets, d => d);
+        // data join keyed by dataset name
+        const items = legendDiv.selectAll("div.legend-item").data(currentAll, d => d);
+
+        // remove old
         items.exit().remove();
 
+        // enter (no label text — only swatch; name appears on hover via tooltip)
         const enter = items.enter()
             .append("div")
             .attr("class", "legend-item")
@@ -125,6 +137,14 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
             .style("align-items", "center")
             .style("cursor", "pointer")
             .style("height", itemHeight + "px")
+            // prevent SVG brushes from stealing the pointer events
+            .on("pointerdown", function(event, d) {
+                event.stopPropagation();
+                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
+                else hiddenDatasets.add(d);
+                // update view (this will call renderLegend again but it will reuse the container)
+                updateParallel();
+            })
             .on("mouseover", function(event, d) {
                 const rect = this.getBoundingClientRect();
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
@@ -136,11 +156,12 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
                     .style("opacity", 1)
                     .on("transitionend", null);
             })
-            .on("mousemove", function(event) {
+            .on("mousemove", function() {
                 const rect = this.getBoundingClientRect();
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                 const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-                tooltip.style("left", (rect.left + scrollLeft + swatchSize + 8) + "px").style("top", (rect.top + scrollTop) + "px");
+                tooltip.style("left", (rect.left + scrollLeft + swatchSize + 8) + "px")
+                    .style("top", (rect.top + scrollTop) + "px");
             })
             .on("mouseleave", function() {
                 tooltip.style("opacity", 0).on("transitionend", function(event) {
@@ -149,12 +170,6 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
                         tooltip.on("transitionend", null);
                     }
                 });
-            })
-            .on("click", function(event, d) {
-                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
-                else hiddenDatasets.add(d);
-                renderLegend(allDataSets, colors);
-                updateParallel();
             });
 
         enter.append("div").attr("class", "legend-swatch")
@@ -163,8 +178,11 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
             .style("border-radius", "7px")
             .style("border", "1px solid #ccc");
 
-        enter.merge(items).select(".legend-swatch")
-            .style("background-color", d => colors[d] || fallbackColor(d))
+        // update existing + newly entered items
+        const merged = enter.merge(items);
+
+        merged.select(".legend-swatch")
+            .style("background-color", d => (colors && colors[d]) || fallbackColor(d))
             .style("opacity", d => hiddenDatasets.has(d) ? 0.25 : 1);
     }
 

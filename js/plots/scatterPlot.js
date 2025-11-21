@@ -146,23 +146,34 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
     function renderLegend(allDataSets, colors) {
         const outer = d3.select(plotDiv);
         outer.style("position", "relative");
-        outer.selectAll(".legend-overlay").remove();
 
-        const legendDiv = outer.append("div").attr("class", "legend-overlay")
-            .style("position", "absolute")
-            .style("right", utils().allDataSets().length + 10 + "px")
-            .style("top", -25 + "px")
-            .style("display", "flex")
-            .style("gap", "6px")
-            .style("z-index", 9999)
-            .style("pointer-events", "auto");
+        // create the legend overlay once and reuse it
+        let legendDiv = outer.select(".legend-overlay");
+        if (legendDiv.empty()) {
+            legendDiv = outer.append("div")
+                .attr("class", "legend-overlay")
+                .style("position", "absolute")
+                .style("right", utils().allDataSets().length + 10 + "px")
+                .style("top", -25 + "px")
+                .style("display", "flex")
+                .style("gap", "6px")
+                .style("z-index", 9999)
+                .style("pointer-events", "auto");
+        } else {
+            // update the position in case number of datasets changed
+            legendDiv.style("right", utils().allDataSets().length + 10 + "px");
+        }
 
         const swatchSize = 16;
         const itemHeight = 18;
 
+        // data join for legend items (keyed by dataset name)
         const items = legendDiv.selectAll("div.legend-item").data(allDataSets, d => d);
+
+        // remove old
         items.exit().remove();
 
+        // enter
         const enter = items.enter()
             .append("div")
             .attr("class", "legend-item")
@@ -170,6 +181,15 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
             .style("align-items", "center")
             .style("cursor", "pointer")
             .style("height", itemHeight + "px")
+            // stop propagation so SVG brush doesn't steal the pointer events
+            .on("pointerdown", function(event, d) {
+                event.stopPropagation();
+                // toggle hidden state
+                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
+                else hiddenDatasets.add(d);
+                // call updateScatter which will re-run renderLegend (update-only)
+                updateScatter();
+            })
             .on("mouseover", function(event, d) {
                 const rect = this.getBoundingClientRect();
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
@@ -188,20 +208,23 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
             })
             .on("mouseleave", function() {
                 tooltip.style("display", "none");
-            })
-            .on("click", function(event, d) {
-                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
-                else hiddenDatasets.add(d);
-                renderLegend(allDataSets, colors);
-                updateScatter();
             });
 
-        enter.append("div").attr("class", "legend-swatch").style("width", swatchSize + "px").style("height", swatchSize + "px").style("border-radius", "7px").style("border", "1px solid #ccc");
+        enter.append("div").attr("class", "legend-swatch")
+            .style("width", swatchSize + "px")
+            .style("height", swatchSize + "px")
+            .style("border-radius", "7px")
+            .style("border", "1px solid #ccc")
+            .style("margin-right", "6px");
 
-        enter.merge(items).select(".legend-swatch")
+        // update existing + newly entered items
+        const merged = enter.merge(items);
+
+        merged.select(".legend-swatch")
             .style("background-color", d => colors[d] || fallbackColor(d))
             .style("opacity", d => hiddenDatasets.has(d) ? 0.25 : 1);
     }
+
 
     // radius configuration: small grey dot & larger colored selected dot
     const minRadius = 2.5;

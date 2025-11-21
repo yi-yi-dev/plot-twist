@@ -398,36 +398,57 @@ export function createBarPlot(fields, options, plotDiv, data, updatePlotsFun, ut
 
     // Render or update legend items — only swatches, labels on hover (tooltip), like histogram
     function renderLegend(allDataSets, colors) {
-        const outer = d3.select(plotDiv);
+        const outer = container; // container already set to d3.select(plotDiv)
         outer.style("position", "relative");
 
-        // Remove any old legend overlay on the host element
-        outer.selectAll(".legend-overlay").remove();
+        const currentAll = Array.isArray(allDataSets) ? allDataSets : (allDataSets || []);
+        if (!currentAll.length) {
+            // remove any leftover overlay
+            outer.selectAll(".legend-overlay").remove();
+            return;
+        }
+
+        const rightOffset = (currentAll.length + 10) + "px";
+        // create/reuse overlay container
+        let legendDiv = outer.select(".legend-overlay");
+        if (legendDiv.empty()) {
+            legendDiv = outer.append("div")
+                .attr("class", "legend-overlay")
+                .style("position", "absolute")
+                .style("top", -25 + "px")
+                .style("display", "flex")
+                .style("gap", "6px")
+                .style("z-index", 9999)
+                .style("pointer-events", "auto");
+        }
+        legendDiv.style("right", rightOffset);
+
         const swatchSize = 16;
-        if (!allDataSets || allDataSets.length === 0) return;
+        const itemHeight = 18;
 
-        const legendDiv = outer
-            .append("div")
-            .attr("class", "legend-overlay")
-            .style("position", "absolute")
-            .style("right", allDataSets.length +10 + "px")
-            .style("top", -25 + "px")
-            .style("z-index", 9999)
-            .style("pointer-events", "auto");
-
-        const items = legendDiv.selectAll("div.legend-item")
-            .data(allDataSets, d => d);
-
+        // data-join keyed by dataset name
+        const items = legendDiv.selectAll("div.legend-item").data(currentAll, d => d);
         items.exit().remove();
 
         const enter = items.enter()
             .append("div")
             .attr("class", "legend-item")
+            .style("display", "flex")
+            .style("align-items", "center")
+            .style("cursor", "pointer")
+            .style("height", itemHeight + "px")
+            // prevent other pointer handlers (e.g. selection) from stealing the event
+            .on("pointerdown", function(event, d) {
+                event.stopPropagation();
+                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
+                else hiddenDatasets.add(d);
+                // re-render using existing update path
+                renderAll();
+            })
             .on("mouseover", function(event, d) {
                 const rect = this.getBoundingClientRect();
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                 const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-
                 tooltip.html(d)
                     .style("left", (rect.left + scrollLeft + swatchSize + 8) + "px")
                     .style("top", (rect.top + scrollTop) + "px")
@@ -435,38 +456,36 @@ export function createBarPlot(fields, options, plotDiv, data, updatePlotsFun, ut
                     .style("opacity", 1)
                     .on("transitionend", null);
             })
-            .on("mousemove", function(event) {
+            .on("mousemove", function() {
                 const rect = this.getBoundingClientRect();
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                 const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-
                 tooltip.style("left", (rect.left + scrollLeft + swatchSize + 8) + "px")
                     .style("top", (rect.top + scrollTop) + "px");
             })
             .on("mouseleave", function() {
-                tooltip.style("opacity", 0)
-                    .on("transitionend", function(event) {
-                        if (event.propertyName === "opacity" && tooltip.style("opacity") === "0") {
-                            tooltip.style("display", "none");
-                            tooltip.on("transitionend", null);
-                        }
-                    });
-            })
-            .on("click", function(event, d) {
-                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
-                else hiddenDatasets.add(d);
-                renderLegend(allDataSets, colors);
-                renderAll();
+                tooltip.style("opacity", 0).on("transitionend", function(event) {
+                    if (event.propertyName === "opacity" && tooltip.style("opacity") === "0") {
+                        tooltip.style("display", "none");
+                        tooltip.on("transitionend", null);
+                    }
+                });
             });
 
         enter.append("div")
-            .attr("class", "legend-swatch");
+            .attr("class", "legend-swatch")
+            .style("width", swatchSize + "px")
+            .style("height", swatchSize + "px")
+            .style("border-radius", "7px")
+            .style("border", "1px solid #ccc");
 
-        enter.merge(items)
-            .select(".legend-swatch")
-            .style("background-color", d => colors[d] || fallbackColor(d))
+        // update existing + new swatches
+        const merged = enter.merge(items);
+        merged.select(".legend-swatch")
+            .style("background-color", d => (colors && colors[d]) || fallbackColor(d))
             .style("opacity", d => hiddenDatasets.has(d) ? 0.25 : 1);
     }
+
 
     function initialRender() {
         const { countsPerCat, allDataSets, colors } = computeCounts();

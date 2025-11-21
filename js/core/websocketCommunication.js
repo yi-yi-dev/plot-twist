@@ -96,8 +96,8 @@ export class websocketCommunication {
 
         this._socket.onmessage = ({ data }) => {
             const msg = JSON.parse(data);
-            console.log(`Received ${msg.type}`);
-            console.log(msg);
+            // console.log(`Received ${msg.type}`);
+            // console.log(msg);
 
             if (msg.type === "selection") {
                 // console.log(msg.clientsSelections);
