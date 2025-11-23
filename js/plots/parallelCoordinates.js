@@ -37,6 +37,21 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
     const unselectedColor = "grey";
     const fallbackColor = d3.scaleOrdinal(d3.schemeCategory10);
 
+    // helper: compute evenly spaced tick values that ALWAYS include domain min and max
+    function computeEvenTicks(domain, count) {
+        // ensure domain is valid and ordered
+        let [a, b] = domain;
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return [];
+        if (a === b) return [a]; // degenerate handled earlier, but safe
+        if (b < a) [a, b] = [b, a];
+
+        const n = Math.max(2, Math.floor(count)); // at least endpoints
+        const step = (b - a) / (n - 1);
+        const ticks = [];
+        for (let i = 0; i < n; i++) ticks.push(a + step * i);
+        return ticks;
+    }
+
     // horizontal x scale per key (ensure safe domains)
     const x = new Map(
         Array.from(keys, (key) => {
@@ -46,9 +61,11 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
             });
             if (extent[0] == null || extent[1] == null) extent = [0, 1];
             if (extent[0] === extent[1]) { extent[0] -= 0.5; extent[1] += 0.5; }
+
+            // NOTE: removed .nice() so original min/max are preserved and shown as tick labels
             return [
                 key,
-                d3.scaleLinear().domain(extent).nice().range([marginLeft, width - marginRight]).unknown(marginLeft)
+                d3.scaleLinear().domain(extent).range([marginLeft, width - marginRight]).unknown(marginLeft)
             ];
         })
     );
@@ -215,14 +232,20 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
         .style('z-index', 2)
         .property("value", []);
 
-    // draw axes groups (same as before)
+    // draw axes groups with evenly spaced ticks and endpoints always included
     const axes = svg.append("g")
         .selectAll("g")
         .data(keys)
         .join("g")
         .attr("transform", (d) => `translate(0,${y(d)})`)
         .each(function (d) {
-            d3.select(this).call(d3.axisBottom(x.get(d)).ticks(5).tickFormat(customTickFormat));
+            const scale = x.get(d);
+            const domain = scale.domain();
+            // choose number of ticks (including endpoints). You can change 5 to other preferred count.
+            const tickCount = 5;
+            const tickVals = computeEvenTicks(domain, tickCount);
+            const axis = d3.axisBottom(scale).tickValues(tickVals).tickFormat(customTickFormat);
+            d3.select(this).call(axis);
         })
         .call((g) =>
             g.append("text")
@@ -269,7 +292,7 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
 
     // const throttledHandleSelection = throttle((event, field) => handleSelection(event, field), 50);
     const throttledHandleSelection = handleSelection;
-    
+
 
     const brushHeight = 50;
     const brush = d3.brushX()

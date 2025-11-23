@@ -30,7 +30,7 @@ export function createHistogram(fields, options, plotDiv, data, updatePlotsFun, 
 
     const marginTop = 10;
     const marginRight = 20;
-    const marginBottom = 30;
+    const marginBottom = 50; // increased to allow rotated tick labels to fit
     const marginLeft = 40;
 
     const brushThrottleMs = 50;
@@ -167,10 +167,31 @@ export function createHistogram(fields, options, plotDiv, data, updatePlotsFun, 
             ctx.stroke();
         });
 
-        // x grid lines (vertical grid based on x ticks)
-        const xTicks = x.ticks ? x.ticks(5) : d3.ticks(min, max, 5);
+        // x grid lines (vertical grid based on BIN EDGES)
+        // compute bin edges (include min and max, unique, in order)
+        let binEdges = [];
+        if (bins && bins.length > 0) {
+            // start with first bin x0
+            binEdges.push(bins[0].x0);
+            bins.forEach(b => {
+                // push each x1 (will include final max)
+                binEdges.push(b.x1);
+            });
+            // dedupe (in case of floating point repeats) while preserving order
+            const seen = new Set();
+            binEdges = binEdges.filter(v => {
+                const key = Number.isFinite(v) ? +v : v;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        } else {
+            // fallback to domain endpoints
+            binEdges = [min, max];
+        }
+
         ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-        xTicks.forEach(t => {
+        binEdges.forEach(t => {
             const xx = x(t);
             ctx.beginPath();
             ctx.moveTo(xx + 0.5, marginTop);
@@ -184,14 +205,42 @@ export function createHistogram(fields, options, plotDiv, data, updatePlotsFun, 
         ctx.save();
         ctx.fillStyle = '#000';
         ctx.font = '12px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
+        // We'll do rotated labels for x axis; adjust text metrics via translate + rotate
 
-        // x axis labels
-        xTicks.forEach(t => {
+        // x axis tick marks and rotated labels (45° down-right)
+        const axisBaselineY = height - marginBottom + 0.5;
+        const tickMarkLen = 6;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // draw tick marks
+        binEdges.forEach(t => {
             const xx = x(t);
-            ctx.fillStyle = '#000';
-            ctx.fillText(customTickFormat(t), xx, height - marginBottom + 6);
+            ctx.moveTo(xx + 0.5, axisBaselineY);
+            ctx.lineTo(xx + 0.5, axisBaselineY + tickMarkLen);
+        });
+        ctx.stroke();
+
+        // rotated labels
+        // increase bottom margin earlier to marginBottom=50 so labels have room
+        ctx.fillStyle = '#000';
+        ctx.font = '12px sans-serif';
+        // We'll render each label by translating to (xx, axisBaselineY + tickMarkLen + labelOffset) and rotating +45°
+        const labelOffset = 6; // px below tick mark before rotation origin
+        binEdges.forEach(t => {
+            const xx = x(t);
+            ctx.save();
+            // translate to pivot point for rotation
+            const px = xx;
+            const py = axisBaselineY + tickMarkLen + labelOffset;
+            ctx.translate(px, py);
+            // rotate clockwise 45 degrees so text reads from top-left to bottom-right
+            ctx.rotate(Math.PI / 4);
+            // draw text starting at (0,0) to the right so left edge is higher than right edge
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(customTickFormat(t), 0, 0);
+            ctx.restore();
         });
 
         // y axis labels (left)
@@ -208,8 +257,8 @@ export function createHistogram(fields, options, plotDiv, data, updatePlotsFun, 
         ctx.strokeStyle = 'rgba(0,0,0,0.8)';
         ctx.beginPath();
         // x axis baseline
-        ctx.moveTo(marginLeft, height - marginBottom + 0.5);
-        ctx.lineTo(width - marginRight, height - marginBottom + 0.5);
+        ctx.moveTo(marginLeft, axisBaselineY);
+        ctx.lineTo(width - marginRight, axisBaselineY);
         ctx.stroke();
         // y axis baseline
         ctx.beginPath();

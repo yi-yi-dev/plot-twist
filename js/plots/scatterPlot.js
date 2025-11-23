@@ -45,10 +45,37 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
     if (yExtent[0] == null || yExtent[1] == null) yExtent = [0, 1];
     if (yExtent[0] === yExtent[1]) { yExtent[0] -= 0.5; yExtent[1] += 0.5; }
 
-    const x = d3.scaleLinear().domain(xExtent).nice().range([marginLeft, width - marginRight]).unknown(marginLeft);
+    // IMPORTANT: remove `.nice()` from x so min/max remain exact
+    const x = d3.scaleLinear().domain(xExtent).range([marginLeft, width - marginRight]).unknown(marginLeft);
     const y = d3.scaleLinear().domain(yExtent).nice().range([height - marginBottom, marginTop]).unknown(height - marginBottom);
 
     container.style("position", "relative");
+
+    // compute custom x ticks: always include min & max and subdivide evenly
+    (function computeCustomXTicks() {
+        const [xmin, xmax] = x.domain();
+        const plotWidth = Math.max(1, width - marginLeft - marginRight);
+
+        // desired approximate spacing between ticks in pixels (adjustable)
+        const approxTickPx = 80;
+
+        // compute total ticks (clamped)
+        const totalTicks = Math.max(2, Math.min(10, Math.round(plotWidth / approxTickPx) + 1));
+        const interiorCount = Math.max(0, totalTicks - 2);
+
+        // build tick values: include endpoints and evenly spaced interior ticks
+        const ticks = [xmin];
+        if (interiorCount > 0) {
+            const step = (xmax - xmin) / (interiorCount + 1);
+            for (let i = 1; i <= interiorCount; i++) {
+                ticks.push(xmin + step * i);
+            }
+        }
+        if (xmax !== xmin) ticks.push(xmax);
+
+        // store on scale for reuse
+        x.customTicks = ticks;
+    })();
 
     // Canvas setup
     const canvas = container.append("canvas").node();
@@ -71,9 +98,12 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
         .style("left", "0px")
         .style("top", "0px");
 
+    // use custom tick values when building axis
+    const xTickValues = x.customTicks || x.ticks(5);
+
     svg.append("g")
         .attr("transform", `translate(0,${height - marginBottom})`)
-        .call(d3.axisBottom(x).ticks(5).tickFormat(customTickFormat))
+        .call(d3.axisBottom(x).tickValues(xTickValues).tickFormat(customTickFormat))
         .call((g) => g.select(".domain").remove())
         .call((g) => g.selectAll("text").style("text-anchor", "middle").style("font-size", "10px"))
         .call((g) => g.append("text")
@@ -90,10 +120,11 @@ export function createScatterPlot(fields, options, plotDiv, data, updatePlotsFun
         .call((g) => g.select(".domain").remove())
         .call((g) => g.select(".tick:last-of-type text").clone().attr("x", 4).attr("text-anchor", "start").attr("font-weight", "bold").text(yField));
 
+    // x grid using same custom tick values
     svg.append("g")
         .attr("class", "grid")
         .attr("transform", `translate(0,${height - marginBottom})`)
-        .call(d3.axisBottom(x).tickSize(-height + marginTop + marginBottom).tickFormat(""))
+        .call(d3.axisBottom(x).tickValues(xTickValues).tickSize(-height + marginTop + marginBottom).tickFormat(""))
         .call((g) => g.select(".domain").remove())
         .call((g) => g.selectAll(".tick line").style("stroke-width", 0.5).style("stroke-opacity", 0.3));
 
