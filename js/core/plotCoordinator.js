@@ -110,7 +110,6 @@ export class PlotCoordinator {
             colorsPerDataSet: () => this.colorsPerDataSet(),
             dataSet: () => {return this.dsName},
             dataSetsOf: (...args) => this.dataSetsOf(...args),
-            colorsOf: (...args) => this.colorOf(...args),
             dataSetColor: () => this.dataSetColor(),
             allDataSets: () => this.allDataSets(),
         }
@@ -236,9 +235,9 @@ export class PlotCoordinator {
                     this._entrySelectionTracker[i]--;
                 }
             }
-        }
 
-        this._plots.clear();
+            this._plots.delete(key);
+        }
     }
 
     _isSelectedRange(d, selectionArr, idx) {
