@@ -167,15 +167,11 @@ export class BarPlot {
 
     // compute counts per category and per dataset (keeps same logic as original)
     computeCounts() {
-        const u =
-            typeof this.utils === "function" ? this.utils() : this.utils || {};
-        const origin =
-            typeof u.dataSet === "function" ? u.dataSet() : u.dataSet || "";
-        const allDataSets =
-            typeof u.allDataSets === "function"
-                ? u.allDataSets() || []
-                : u.allDataSets || [];
-        const colors = u.colorsPerDataSet || u.colors || {};
+        const u = this.utils();
+
+        const origin = u.dataSet();
+        const allDataSets = u.allDataSets() || [];
+        const colors = u.colorsPerDataSet();
 
         const countsPerCat = this.categories.map(() => ({
             total: 0,
@@ -189,27 +185,22 @@ export class BarPlot {
             const cat = d[this.field];
             const ci = this.categories.indexOf(cat);
             if (ci < 0) return;
+
             const c = countsPerCat[ci];
             c.total += 1;
 
-            const isSel =
-                typeof u.isRowSelected === "function"
-                    ? !!u.isRowSelected(i)
-                    : !!u.isRowSelected;
+            const isSel = u.isRowSelected(i);
             if (isSel && origin) {
                 if (!(origin in c.datasets)) c.datasets[origin] = 0;
                 c.datasets[origin] += 1;
             }
 
-            let others = [];
-            if (typeof u.dataSetsOf === "function") {
-                const res = u.dataSetsOf(i);
-                if (Array.isArray(res)) others = res;
-            }
-            const uniqueOthers = Array.from(new Set(others || []));
+            const others = u.dataSetsOf(i) || [];
+            const uniqueOthers = Array.from(new Set(others));
+
             uniqueOthers.forEach((ds) => {
                 if (!(ds in c.datasets)) c.datasets[ds] = 0;
-                if (ds === origin && isSel) return; // dedupe selected origin
+                if (ds === origin && isSel) return;
                 c.datasets[ds] += 1;
             });
         });

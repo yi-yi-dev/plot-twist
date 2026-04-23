@@ -132,12 +132,8 @@ export class ParallelCoordinates {
 
         // initial legend render using utils snapshot
         const initialUtils = this.utils();
-        const initialAllDataSets =
-            typeof initialUtils.allDataSets === "function"
-                ? initialUtils.allDataSets() || []
-                : initialUtils.allDataSets || [];
-        const initialColors =
-            initialUtils.colorsPerDataSet || initialUtils.colors || {};
+        const initialAllDataSets = initialUtils.allDataSets() || [];
+        const initialColors = initialUtils.colorsPerDataSet();
         this.legend.render(initialAllDataSets, initialColors);
 
         // initial draw
@@ -248,26 +244,14 @@ export class ParallelCoordinates {
     // Utility to extract datasets for a row (keeps original multi-source compatibility)
     dataSetsOfRow(i) {
         const u = this.utils();
-        let others = [];
-        if (typeof u.dataSetsOf === "function") {
-            const res = u.dataSetsOf(i);
-            if (Array.isArray(res)) others = res;
-        } else if (Array.isArray(u.dataSestOf)) {
-            const res = u.dataSestOf(i);
-            if (Array.isArray(res)) others = res;
-        } else if (Array.isArray(u.dataSetsOf)) {
-            others = u.dataSetsOf;
-        }
 
-        const origin =
-            typeof u.dataSet === "function" ? u.dataSet() : u.dataSet || "";
-        const isSelected =
-            typeof u.isRowSelected === "function"
-                ? !!u.isRowSelected(i)
-                : !!u.isRowSelected;
+        const others = u.dataSetsOf(i) || [];
+        const origin = u.dataSet();
+        const isSelected = u.isRowSelected(i);
+
         if (isSelected && origin) others.push(origin);
 
-        return Array.from(new Set(others || []));
+        return Array.from(new Set(others));
     }
 
     // Precompute polyline points and simple bounding boxes for each datum
@@ -448,13 +432,9 @@ export class ParallelCoordinates {
     // Aggregates utils -> datasets/colors and performs legend render + canvas draw
     update() {
         const u = this.utils();
-        const allDataSets =
-            typeof u.allDataSets === "function"
-                ? u.allDataSets() || []
-                : u.allDataSets || [];
-        const colors = u.colorsPerDataSet || u.colors || {};
+        const allDataSets = u.allDataSets() || [];
+        const colors = u.colorsPerDataSet();
 
-        // update legend UI and redraw canvas based on legend state
         this.legend.render(allDataSets, colors);
         this.drawCanvas(allDataSets, colors);
     }

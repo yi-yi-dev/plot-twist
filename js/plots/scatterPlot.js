@@ -288,30 +288,15 @@ export class ScatterPlot {
 
     // returns datasets for a row
     dataSetsOfRow(i) {
-        const u =
-            typeof this.utils === "function" ? this.utils() : this.utils || {};
-        let others = [];
-        if (typeof u.dataSetsOf === "function") {
-            const res = u.dataSetsOf(i);
-            if (Array.isArray(res)) others = res;
-        } else if (Array.isArray(u.dataSetsOf)) {
-            others = u.dataSetsOf;
-        } else if (typeof u.dataSestOf === "function") {
-            const res = u.dataSestOf(i);
-            if (Array.isArray(res)) others = res;
-        } else if (Array.isArray(u.dataSestOf)) {
-            others = u.dataSestOf;
-        }
+        const u = this.utils();
 
-        const origin =
-            typeof u.dataSet === "function" ? u.dataSet() : u.dataSet || "";
-        const isSelected =
-            typeof u.isRowSelected === "function"
-                ? !!u.isRowSelected(i)
-                : !!u.isRowSelected;
+        const others = u.dataSetsOf(i) || [];
+        const origin = u.dataSet();
+        const isSelected = u.isRowSelected(i);
+
         if (isSelected && origin) others.push(origin);
 
-        return Array.from(new Set(others || []));
+        return Array.from(new Set(others));
     }
 
     // draw canvas: two passes (small grey dots, then colored selected dots)
@@ -322,13 +307,9 @@ export class ScatterPlot {
 
         ctx.clearRect(0, 0, width, height);
 
-        const u =
-            typeof this.utils === "function" ? this.utils() : this.utils || {};
-        const allDataSets =
-            typeof u.allDataSets === "function"
-                ? u.allDataSets() || []
-                : u.allDataSets || [];
-        const colors = u.colorsPerDataSet || u.colors || {};
+        const u = this.utils();
+        const allDataSets = u.allDataSets() || [];
+        const colors = u.colorsPerDataSet();
 
         // determine which datasets are hidden via legend overlay
         const hiddenSet = this.legend.getGlobalDatasets
@@ -379,18 +360,12 @@ export class ScatterPlot {
 
         // regression line (if enabled)
         if (this.isRegressionSelected && filteredRegression) {
-            const u2 =
-                typeof this.utils === "function"
-                    ? this.utils()
-                    : this.utils || {};
-            const origin =
-                typeof u2.dataSet === "function"
-                    ? u2.dataSet()
-                    : u2.dataSet || "";
-            const colors2 = u2.colorsPerDataSet || u2.colors || {};
+            const u2 = this.utils();
+            const origin = u2.dataSet();
+            const colors2 = u2.colorsPerDataSet();
             const originColor = origin
                 ? colors2[origin] || this.fallbackColor(origin)
-                : (u2.dataSetColor && u2.dataSetColor()) || "#000";
+                : u2.dataSetColor();
 
             ctx.beginPath();
             ctx.lineWidth = 1.2;
@@ -572,21 +547,14 @@ export class ScatterPlot {
 
     // main update function: recompute quadtree, update legend, regression, coefficients and draw
     update() {
-        const u =
-            typeof this.utils === "function" ? this.utils() : this.utils || {};
-        const allDataSets =
-            typeof u.allDataSets === "function"
-                ? u.allDataSets() || []
-                : u.allDataSets || [];
-        const colors = u.colorsPerDataSet || u.colors || {};
+        const u = this.utils();
+        const allDataSets = u.allDataSets() || [];
+        const colors = u.colorsPerDataSet();
 
-        // render legend via LegendOverlay API (LegendOverlay now handles its own hover tooltip)
         this.legend.render(allDataSets, colors);
 
-        // rebuild spatial index (points positions may change if scales changed)
         this._rebuildPointsAndQuadtree();
 
-        // compute which datasets are visible (legend holds toggles)
         const hiddenSet = this.legend.getGlobalDatasets
             ? this.legend.getGlobalDatasets()
             : new Set();
@@ -594,7 +562,6 @@ export class ScatterPlot {
             allDataSets.filter((ds) => !hiddenSet.has(ds))
         );
 
-        // determine data that is selected and in visible datasets (used for regression & coefficients)
         const selectedAndInVisibleDs = this.data.filter((d, i) => {
             const dsList = this.dataSetsOfRow(i);
             if (!dsList || dsList.length === 0) return false;
@@ -606,7 +573,6 @@ export class ScatterPlot {
             : null;
         this.updateCoefficients(selectedAndInVisibleDs);
 
-        // draw to canvas
         this.drawCanvas(regression);
     }
 

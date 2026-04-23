@@ -122,15 +122,11 @@ export class Histogram {
 
     // compute counts per bin and dataset distribution
     computeCounts() {
-        const u =
-            typeof this.utils === "function" ? this.utils() : this.utils || {};
-        const origin =
-            typeof u.dataSet === "function" ? u.dataSet() : u.dataSet || "";
-        const allDataSets =
-            typeof u.allDataSets === "function"
-                ? u.allDataSets() || []
-                : u.allDataSets || [];
-        const colors = u.colorsPerDataSet || u.colors || {};
+        const u = this.utils();
+
+        const origin = u.dataSet();
+        const allDataSets = u.allDataSets() || [];
+        const colors = u.colorsPerDataSet();
 
         const countsPerBin = this.bins.map(() => ({ total: 0, datasets: {} }));
         this.bins.forEach((b, bi) => {
@@ -146,31 +142,20 @@ export class Histogram {
                         (idx === this.bins.length - 1 && value <= b.x1))
             );
             if (binIdx < 0) return;
+
             const binCounts = countsPerBin[binIdx];
             binCounts.total += 1;
 
-            const isSelected =
-                typeof u.isRowSelected === "function"
-                    ? !!u.isRowSelected(i)
-                    : !!u.isRowSelected;
+            const isSelected = u.isRowSelected(i);
             if (isSelected && origin) {
                 if (!(origin in binCounts.datasets))
                     binCounts.datasets[origin] = 0;
                 binCounts.datasets[origin] += 1;
             }
 
-            let others = [];
-            if (typeof u.dataSetsOf === "function") {
-                const res = u.dataSetsOf(i);
-                if (Array.isArray(res)) others = res;
-            } else if (Array.isArray(u.dataSestOf)) {
-                const res = u.dataSestOf(i);
-                if (Array.isArray(res)) others = res;
-            } else if (Array.isArray(u.dataSetsOf)) {
-                others = u.dataSetsOf;
-            }
+            const others = u.dataSetsOf(i) || [];
+            const uniqueOthers = Array.from(new Set(others));
 
-            const uniqueOthers = Array.from(new Set(others || []));
             uniqueOthers.forEach((ds) => {
                 if (!(ds in binCounts.datasets)) binCounts.datasets[ds] = 0;
                 if (ds === origin && isSelected) return;
