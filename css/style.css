@@ -1167,5 +1167,38 @@ select.links-item__dataset-select__error:focus {
     overflow: visible;
 }
 
+/**
+* Style for kill session button
+*/
+
+#kill-session-btn {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 1000;
+
+    margin-left: 0;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    color: #8b1e1e;
+    padding: 10px 15px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    background: rgba(255, 235, 235, 0.9);
+    backdrop-filter: blur(10px);
+    box-shadow: 1px 4px 4px rgba(0, 0, 0, 0.1);
+    border: 0;
+}
+
+#kill-session-btn:hover {
+    background-color: rgba(255, 210, 210, 0.95);
+    box-shadow: 0 2px 6px rgba(139, 30, 30, 0.25);
+}
+
 
 
