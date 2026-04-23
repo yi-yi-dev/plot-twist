@@ -1,100 +1,253 @@
 import * as d3 from "d3";
-import throttle from "lodash-es/throttle.js";
 import { customTickFormat } from "./plotsUtils/tickFormat.js";
+import { LegendOverlay } from "./plotsUtils/togglableLegendOverlay.js";
 
-export const parallelCoordinates = {
-    plotName: "Parallel Coordinates",
-    fields: [
-        { fieldType: "numerical", isRequired: true, fieldName: "1st axis" },
-        { fieldType: "numerical", isRequired: true, fieldName: "2nd axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "3rd axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "4th axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "5th axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "6th axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "7th axis" },
-        { fieldType: "numerical", isRequired: false, fieldName: "8th axis" }
-    ],
-    options: [],
-    height: 2,
-    width: 1,
-    createPlotFunction: createParallelCoordinates,
-};
+export class ParallelCoordinates {
+    constructor(fields, options, plotDiv, data, updatePlotsFun, utils) {
+        this.fields = fields;
+        this.options = options;
+        this.plotDiv = plotDiv;
+        this.data = data;
+        this.updatePlotsFun = updatePlotsFun;
+        this.utils = utils;
 
-export function createParallelCoordinates(fields, options, plotDiv, data, updatePlotsFun, utils) {
-    const keys = parallelCoordinates.fields
-        .map(field => fields.get(field.fieldName))
-        .filter(value => value !== "");
+        // keys selected by user (preserve original filtering logic)
+        this.keys = parallelCoordinates.fields
+            .map((field) => fields.get(field.fieldName))
+            .filter((value) => value !== "");
 
-    const container = d3.select(plotDiv);
-    const width = container.node().clientWidth;
-    const height = container.node().clientHeight;
+        // DOM container and dimensions
+        this.container = d3.select(plotDiv);
+        this.container.style("position", "relative");
+        this.width = this.container.node().clientWidth;
+        this.height = this.container.node().clientHeight;
 
-    const marginTop = 20;
-    const marginRight = 15;
-    const marginBottom = 30;
-    const marginLeft = 15;
+        // margins and layout constants
+        this.marginTop = 20;
+        this.marginRight = 15;
+        this.marginBottom = 30;
+        this.marginLeft = 15;
 
-    const unselectedColor = "grey";
-    const fallbackColor = d3.scaleOrdinal(d3.schemeCategory10);
+        // colors and fallback
+        this.unselectedColor = "grey";
+        this.fallbackColor = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // build scales per-key (preserve exact domain endpoints; do not .nice())
+        this.x = new Map(
+            Array.from(this.keys, (key) => {
+                let extent = d3.extent(this.data, (d) => {
+                    const v = Number(d[key]);
+                    return Number.isFinite(v) ? v : null;
+                });
+                if (extent[0] == null || extent[1] == null) extent = [0, 1];
+                if (extent[0] === extent[1]) {
+                    extent[0] -= 0.5;
+                    extent[1] += 0.5;
+                }
+                return [
+                    key,
+                    d3
+                        .scaleLinear()
+                        .domain(extent)
+                        .range([this.marginLeft, this.width - this.marginRight])
+                        .unknown(this.marginLeft),
+                ];
+            })
+        );
+
+        // vertical layout for axes (point scale)
+        this.y = d3
+            .scalePoint()
+            .domain(this.keys)
+            .range([this.marginTop, this.height - this.marginBottom]);
+
+        // LegendOverlay instance (manages toggling/hiding globally)
+        this.legend = new LegendOverlay(this.container, {
+            fallbackColor: this.fallbackColor,
+            onToggle: () => this.update(),
+        });
+
+        // small tooltip for hovered polyline (row name)
+        this.tooltip = d3
+            .select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("position", "absolute")
+            .style("pointer-events", "none")
+            .style("color", "#333")
+            .style("background", "rgba(250, 250, 250, 0.95)")
+            .style("padding", "6px 12px")
+            .style("border-radius", "8px")
+            .style("box-shadow", "0 2px 8px rgba(0,0,0,0.15)")
+            .style("font-size", "13px")
+            .style("z-index", 10000)
+            .style("opacity", 0)
+            .style("transform", "translateY(5px)")
+            .style("transition", "opacity 0.18s ease, transform 0.18s ease")
+            .style("display", "none");
+
+        // SVG for axes and brushes (overlay above canvas)
+        this.svg = this.container
+            .append("svg")
+            .attr("viewBox", `0 0 ${this.width} ${this.height}`)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .style("position", "absolute")
+            .style("left", "0px")
+            .style("top", "0px")
+            .style("z-index", 2)
+            .property("value", []);
+
+        // canvas for drawing polylines (under SVG axes)
+        this.canvas = this.container
+            .append("canvas")
+            .attr("class", "pc-canvas")
+            .style("position", "absolute")
+            .style("left", "0px")
+            .style("top", "0px")
+            .style("z-index", 1)
+            .node();
+
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        this.canvas.style.width = this.width + "px";
+        this.canvas.style.height = this.height + "px";
+        this.canvas.width = Math.round(this.width * dpr);
+        this.canvas.height = Math.round(this.height * dpr);
+        this.ctx = this.canvas.getContext("2d");
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.ctx.clearRect(0, 0, this.width, this.height);
+
+        // compute axes groups and attach brushes
+        this._renderAxesAndBrushes();
+
+        // precompute polylines and bboxes for faster draws / hit-testing
+        this.polylines = this._precomputePolylines();
+
+        // mouse hit-testing throttle
+        this.hoverTolerance = 6;
+        this._findNearest = this._findNearest.bind(this);
+        this._throttledMouse = (event) => this._onMouseMove(event);
+
+        this.canvas.addEventListener("mousemove", this._throttledMouse);
+        this.canvas.addEventListener("mouseleave", () => this._hideTooltip());
+
+        // initial legend render using utils snapshot
+        const initialUtils = this.utils();
+        const initialAllDataSets =
+            typeof initialUtils.allDataSets === "function"
+                ? initialUtils.allDataSets() || []
+                : initialUtils.allDataSets || [];
+        const initialColors =
+            initialUtils.colorsPerDataSet || initialUtils.colors || {};
+        this.legend.render(initialAllDataSets, initialColors);
+
+        // initial draw
+        this.update();
+    }
 
     // helper: compute evenly spaced tick values that ALWAYS include domain min and max
-    function computeEvenTicks(domain, count) {
-        // ensure domain is valid and ordered
+    computeEvenTicks(domain, count) {
         let [a, b] = domain;
         if (!Number.isFinite(a) || !Number.isFinite(b)) return [];
-        if (a === b) return [a]; // degenerate handled earlier, but safe
+        if (a === b) return [a];
         if (b < a) [a, b] = [b, a];
 
-        const n = Math.max(2, Math.floor(count)); // at least endpoints
+        const n = Math.max(2, Math.floor(count));
         const step = (b - a) / (n - 1);
         const ticks = [];
         for (let i = 0; i < n; i++) ticks.push(a + step * i);
         return ticks;
     }
 
-    // horizontal x scale per key (ensure safe domains)
-    const x = new Map(
-        Array.from(keys, (key) => {
-            let extent = d3.extent(data, (d) => {
-                const v = Number(d[key]);
-                return Number.isFinite(v) ? v : null;
-            });
-            if (extent[0] == null || extent[1] == null) extent = [0, 1];
-            if (extent[0] === extent[1]) { extent[0] -= 0.5; extent[1] += 0.5; }
+    // Build axes, attach brush behaviour per-axis
+    _renderAxesAndBrushes() {
+        const marginLeft = this.marginLeft;
+        const x = this.x;
+        const y = this.y;
 
-            // NOTE: removed .nice() so original min/max are preserved and shown as tick labels
-            return [
-                key,
-                d3.scaleLinear().domain(extent).range([marginLeft, width - marginRight]).unknown(marginLeft)
-            ];
-        })
-    );
+        // axes groups (one per key)
+        this.axes = this.svg
+            .append("g")
+            .selectAll("g")
+            .data(this.keys)
+            .join("g")
+            .attr("transform", (d) => `translate(0,${y(d)})`)
+            .each((d, i, nodes) => {
+                // compute tick values that include endpoints
+                const scale = x.get(d);
+                const domain = scale.domain();
+                const tickCount = 5;
+                const tickVals = this.computeEvenTicks(domain, tickCount);
+                const axis = d3
+                    .axisBottom(scale)
+                    .tickValues(tickVals)
+                    .tickFormat(customTickFormat);
+                d3.select(nodes[i]).call(axis);
+            })
+            .call((g) =>
+                g
+                    .append("text")
+                    .attr("x", marginLeft)
+                    .attr("y", -6)
+                    .attr("text-anchor", "start")
+                    .attr("fill", "currentColor")
+                    .text((d) => d)
+            )
+            .call((g) =>
+                g
+                    .selectAll("text")
+                    .clone(true)
+                    .lower()
+                    .attr("fill", "none")
+                    .attr("stroke-width", 5)
+                    .attr("stroke-linejoin", "round")
+                    .attr("stroke", "white")
+            );
 
-    // y layout for axes
-    const y = d3.scalePoint().domain(keys).range([marginTop, height - marginBottom]);
+        // brush behaviour per-axis
+        this.selectionsFromAxis = new Map();
+        const brushHeight = 50;
+        const brush = d3.brushX().extent([
+            [this.marginLeft, -(brushHeight / 2)],
+            [this.width - this.marginRight, brushHeight / 2],
+        ]);
+        // bind this.handleSelection so it's called with (event, field)
+        const throttledHandle = (event, d) => this._handleSelection(event, d);
+        this.axes.call((g) =>
+            g.call(
+                brush.on("start brush end", function (event, d) {
+                    throttledHandle(event, d);
+                })
+            )
+        );
+    }
 
-    const hiddenDatasets = new Set();
+    // Brush handler: update selectionsFromAxis and call updatePlotsFun with aggregated ranges
+    _handleSelection(event, fieldSelected) {
+        const selection = event.selection;
+        if (selection === null) {
+            this.selectionsFromAxis.delete(fieldSelected);
+        } else {
+            const vals = selection.map((v) =>
+                this.x.get(fieldSelected).invert(v)
+            );
+            this.selectionsFromAxis.set(fieldSelected, vals);
+        }
 
-    // tooltip for legend
-    const tooltip = d3.select("body")
-        .append("div")
-        .attr("class", "tooltip")
-        .style("position", "absolute")
-        .style("pointer-events", "none")
-        .style("color", "#333")
-        .style("background", "rgba(250, 250, 250, 0.9)")
-        .style("padding", "6px 12px")
-        .style("border-radius", "8px")
-        .style("box-shadow", "0 2px 8px rgba(0,0,0,0.15)")
-        .style("font-size", "13px")
-        .style("z-index", 10000)
-        .style("opacity", 0)
-        .style("transform", "translateY(5px)")
-        .style("transition", "opacity 0.3s ease, transform 0.3s ease")
-        .style("display", "none");
+        const selectRanges = Array.from(
+            this.selectionsFromAxis,
+            ([field, [min, max]]) => ({
+                range: [min, max],
+                field: field,
+                type: "numerical",
+            })
+        );
 
-    function dataSetsOfRow(i) {
-        const u = utils();
+        this.updatePlotsFun(selectRanges);
+    }
+
+    // Utility to extract datasets for a row (keeps original multi-source compatibility)
+    dataSetsOfRow(i) {
+        const u = this.utils();
         let others = [];
         if (typeof u.dataSetsOf === "function") {
             const res = u.dataSetsOf(i);
@@ -106,346 +259,232 @@ export function createParallelCoordinates(fields, options, plotDiv, data, update
             others = u.dataSetsOf;
         }
 
-        const origin = typeof u.dataSet === "function" ? u.dataSet() : (u.dataSet || "");
-        const isSelected = typeof u.isRowSelected === "function" ? !!u.isRowSelected(i) : !!u.isRowSelected;
+        const origin =
+            typeof u.dataSet === "function" ? u.dataSet() : u.dataSet || "";
+        const isSelected =
+            typeof u.isRowSelected === "function"
+                ? !!u.isRowSelected(i)
+                : !!u.isRowSelected;
         if (isSelected && origin) others.push(origin);
 
         return Array.from(new Set(others || []));
     }
 
-    function renderLegend(allDataSets, colors) {
-        const outer = d3.select(plotDiv);
-        outer.style("position", "relative");
+    // Precompute polyline points and simple bounding boxes for each datum
+    _precomputePolylines() {
+        const keys = this.keys;
+        const x = this.x;
+        const y = this.y;
+        const polylines = this.data.map((d) => {
+            const pts = keys
+                .map((k) => {
+                    const v = d[k];
+                    const num = v == null || v === "" ? null : Number(v);
+                    return num == null || !Number.isFinite(num)
+                        ? null
+                        : [x.get(k)(num), y(k)];
+                })
+                .filter((p) => p != null);
 
-        // safe length for positioning
-        const currentAll = Array.isArray(allDataSets) ? allDataSets : (allDataSets || []);
-        const rightOffset = (currentAll.length ? currentAll.length : 0) + 10 + "px";
-
-        // create the legend overlay once and reuse it
-        let legendDiv = outer.select(".legend-overlay");
-        if (legendDiv.empty()) {
-            legendDiv = outer.append("div")
-                .attr("class", "legend-overlay")
-                .style("position", "absolute")
-                .style("right", rightOffset)
-                .style("top", -25 + "px")
-                .style("display", "flex")
-                .style("gap", "6px")
-                .style("z-index", 9999)
-                .style("pointer-events", "auto");
-        } else {
-            legendDiv.style("right", rightOffset);
-        }
-
-        const swatchSize = 16;
-        const itemHeight = 18;
-
-        // data join keyed by dataset name
-        const items = legendDiv.selectAll("div.legend-item").data(currentAll, d => d);
-
-        // remove old
-        items.exit().remove();
-
-        // enter (no label text — only swatch; name appears on hover via tooltip)
-        const enter = items.enter()
-            .append("div")
-            .attr("class", "legend-item")
-            .style("display", "flex")
-            .style("align-items", "center")
-            .style("cursor", "pointer")
-            .style("height", itemHeight + "px")
-            // prevent SVG brushes from stealing the pointer events
-            .on("pointerdown", function(event, d) {
-                event.stopPropagation();
-                if (hiddenDatasets.has(d)) hiddenDatasets.delete(d);
-                else hiddenDatasets.add(d);
-                // update view (this will call renderLegend again but it will reuse the container)
-                updateParallel();
-            })
-            .on("mouseover", function(event, d) {
-                const rect = this.getBoundingClientRect();
-                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-                tooltip.html(d)
-                    .style("left", (rect.left + scrollLeft + swatchSize + 8) + "px")
-                    .style("top", (rect.top + scrollTop) + "px")
-                    .style("display", "block")
-                    .style("opacity", 1)
-                    .on("transitionend", null);
-            })
-            .on("mousemove", function() {
-                const rect = this.getBoundingClientRect();
-                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-                tooltip.style("left", (rect.left + scrollLeft + swatchSize + 8) + "px")
-                    .style("top", (rect.top + scrollTop) + "px");
-            })
-            .on("mouseleave", function() {
-                tooltip.style("opacity", 0).on("transitionend", function(event) {
-                    if (event.propertyName === "opacity" && tooltip.style("opacity") === "0") {
-                        tooltip.style("display", "none");
-                        tooltip.on("transitionend", null);
-                    }
-                });
-            });
-
-        enter.append("div").attr("class", "legend-swatch")
-            .style("width", swatchSize + "px")
-            .style("height", swatchSize + "px")
-            .style("border-radius", "7px")
-            .style("border", "1px solid #ccc");
-
-        // update existing + newly entered items
-        const merged = enter.merge(items);
-
-        merged.select(".legend-swatch")
-            .style("background-color", d => (colors && colors[d]) || fallbackColor(d))
-            .style("opacity", d => hiddenDatasets.has(d) ? 0.25 : 1);
+            // bounding box for quick rejection in hit-testing
+            let minX = Infinity,
+                minY = Infinity,
+                maxX = -Infinity,
+                maxY = -Infinity;
+            for (const p of pts) {
+                if (p[0] < minX) minX = p[0];
+                if (p[0] > maxX) maxX = p[0];
+                if (p[1] < minY) minY = p[1];
+                if (p[1] > maxY) maxY = p[1];
+            }
+            if (!isFinite(minX)) {
+                minX = 0;
+                minY = 0;
+                maxX = 0;
+                maxY = 0;
+            }
+            return { pts, bbox: [minX, minY, maxX, maxY] };
+        });
+        return polylines;
     }
 
-    // create canvas for drawing data lines (below SVG axes)
-    const canvas = container.append('canvas')
-        .attr('class', 'pc-canvas')
-        .style('position', 'absolute')
-        .style('left', '0px')
-        .style('top', '0px')
-        .style('z-index', 1)
-        .node();
-
-    const ctx = canvas.getContext('2d');
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    // svg overlay for axes + brushes
-    const svg = container
-        .append("svg")
-        .attr("viewBox", `0 0 ${width} ${height}`)
-        .attr("preserveAspectRatio", "xMidYMid meet")
-        .style('position', 'absolute')
-        .style('left', '0px')
-        .style('top', '0px')
-        .style('z-index', 2)
-        .property("value", []);
-
-    // draw axes groups with evenly spaced ticks and endpoints always included
-    const axes = svg.append("g")
-        .selectAll("g")
-        .data(keys)
-        .join("g")
-        .attr("transform", (d) => `translate(0,${y(d)})`)
-        .each(function (d) {
-            const scale = x.get(d);
-            const domain = scale.domain();
-            // choose number of ticks (including endpoints). You can change 5 to other preferred count.
-            const tickCount = 5;
-            const tickVals = computeEvenTicks(domain, tickCount);
-            const axis = d3.axisBottom(scale).tickValues(tickVals).tickFormat(customTickFormat);
-            d3.select(this).call(axis);
-        })
-        .call((g) =>
-            g.append("text")
-                .attr("x", marginLeft)
-                .attr("y", -6)
-                .attr("text-anchor", "start")
-                .attr("fill", "currentColor")
-                .text((d) => d)
-        )
-        .call((g) =>
-            g.selectAll("text")
-                .clone(true)
-                .lower()
-                .attr("fill", "none")
-                .attr("stroke-width", 5)
-                .attr("stroke-linejoin", "round")
-                .attr("stroke", "white")
-        );
-
-    // Brush behaviour (per-axis)
-    const selectionsFromAxis = new Map();
-
-    function handleSelection(event, fieldSelected) {
-        const selection = event.selection;
-        if (selection === null) {
-            selectionsFromAxis.delete(fieldSelected);
-        } else {
-            // convert pixels -> domain values
-            const vals = selection.map(v => x.get(fieldSelected).invert(v));
-            selectionsFromAxis.set(fieldSelected, vals);
-        }
-
-        const selectRanges = Array.from(
-            selectionsFromAxis,
-            ([field, [min, max]]) => ({
-                range: [min, max],
-                field: field,
-                type: "numerical",
-            })
-        );
-
-        updatePlotsFun(selectRanges);
-    }
-
-    // const throttledHandleSelection = throttle((event, field) => handleSelection(event, field), 50);
-    const throttledHandleSelection = handleSelection;
-
-
-    const brushHeight = 50;
-    const brush = d3.brushX()
-        .extent([[marginLeft, -(brushHeight / 2)], [width - marginRight, brushHeight / 2]]);
-
-    axes.call(g => g.call(brush.on("start brush end", function(event, d) { throttledHandleSelection(event, d); })));
-
-    // initial legend
-    const initialUtils = utils();
-    const initialAllDataSets = typeof initialUtils.allDataSets === "function" ? (initialUtils.allDataSets() || []) : (initialUtils.allDataSets || []);
-    const initialColors = initialUtils.colorsPerDataSet || initialUtils.colors || {};
-    renderLegend(initialAllDataSets, initialColors);
-
-    // Precompute polyline points for each datum for faster draws and simple bounding boxes for hit-testing
-    const polylines = data.map(d => {
-        const pts = keys.map(k => {
-            const v = d[k];
-            const num = v == null || v === "" ? null : Number(v);
-            return (num == null || !Number.isFinite(num)) ? null : [x.get(k)(num), y(k)];
-        }).filter(p => p != null);
-        // bbox
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (const p of pts) {
-            if (p[0] < minX) minX = p[0];
-            if (p[0] > maxX) maxX = p[0];
-            if (p[1] < minY) minY = p[1];
-            if (p[1] > maxY) maxY = p[1];
-        }
-        if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
-        return { pts, bbox: [minX, minY, maxX, maxY] };
-    });
-
-    // draw all polylines to canvas according to dataset and hidden sets
-    function drawCanvas(allDataSets, colors) {
+    // Draw polylines on canvas using dataset coloring and legend-hidden state
+    drawCanvas(allDataSets, colors) {
+        const ctx = this.ctx;
+        const width = this.width;
+        const height = this.height;
         ctx.clearRect(0, 0, width, height);
 
-        const visibleDatasets = new Set(allDataSets.filter(ds => !hiddenDatasets.has(ds)));
+        const hidden = this.legend.getGlobalDatasets
+            ? this.legend.getGlobalDatasets()
+            : new Set();
+        const visibleDatasets = new Set(
+            allDataSets.filter((ds) => !hidden.has(ds))
+        );
 
-        for (let i = 0; i < data.length; i++) {
-            const d = data[i];
-            const pl = polylines[i];
+        for (let i = 0; i < this.data.length; i++) {
+            const pl = this.polylines[i];
             if (!pl || pl.pts.length === 0) continue;
 
-            const dsList = dataSetsOfRow(i);
+            const dsList = this.dataSetsOfRow(i);
             let chosen = null;
             for (let j = 0; j < dsList.length; j++) {
-                if (visibleDatasets.has(dsList[j])) { chosen = dsList[j]; break; }
+                if (visibleDatasets.has(dsList[j])) {
+                    chosen = dsList[j];
+                    break;
+                }
             }
 
-            const dsColor = chosen ? (colors[chosen] || fallbackColor(chosen)) : unselectedColor;
+            const dsColor = chosen
+                ? colors[chosen] || this.fallbackColor(chosen)
+                : this.unselectedColor;
             const isRowSel = chosen;
 
             ctx.beginPath();
             const pts = pl.pts;
             ctx.moveTo(pts[0][0], pts[0][1]);
-            for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+            for (let k = 1; k < pts.length; k++)
+                ctx.lineTo(pts[k][0], pts[k][1]);
 
-            // stroke style mapping from original
             ctx.lineWidth = isRowSel ? 0.8 : 0.08;
             ctx.globalAlpha = 1;
             ctx.strokeStyle = dsColor;
             ctx.stroke();
         }
-        // restore defaults
+
         ctx.globalAlpha = 1;
     }
 
-    // simple hit test (throttled) to show title-like tooltip for nearest polyline within tolerance
-    const hoverTolerance = 6; // pixels
-    const findNearest = (mx, my, colors, allDataSets) => {
-        // scan bounding boxes first (cheap), then segment distances for a small candidate set
+    // Hit-testing: find nearest polyline index within hoverTolerance
+    _findNearest(mx, my) {
         const candidates = [];
-        for (let i = 0; i < polylines.length; i++) {
-            const b = polylines[i].bbox;
-            if (mx + hoverTolerance < b[0] || mx - hoverTolerance > b[2] || my + hoverTolerance < b[1] || my - hoverTolerance > b[3]) continue;
+        for (let i = 0; i < this.polylines.length; i++) {
+            const b = this.polylines[i].bbox;
+            if (
+                mx + this.hoverTolerance < b[0] ||
+                mx - this.hoverTolerance > b[2] ||
+                my + this.hoverTolerance < b[1] ||
+                my - this.hoverTolerance > b[3]
+            )
+                continue;
             candidates.push(i);
         }
+
         let best = { idx: -1, dist: Infinity };
         for (const i of candidates) {
-            const pts = polylines[i].pts;
+            const pts = this.polylines[i].pts;
             for (let s = 0; s < pts.length - 1; s++) {
-                const x1 = pts[s][0], y1 = pts[s][1], x2 = pts[s+1][0], y2 = pts[s+1][1];
-                // distance from point to segment
-                const A = mx - x1, B = my - y1, C = x2 - x1, D = y2 - y1;
+                const x1 = pts[s][0],
+                    y1 = pts[s][1],
+                    x2 = pts[s + 1][0],
+                    y2 = pts[s + 1][1];
+                const A = mx - x1,
+                    B = my - y1,
+                    C = x2 - x1,
+                    D = y2 - y1;
                 const dot = A * C + B * D;
                 const lenSq = C * C + D * D;
                 let param = lenSq !== 0 ? dot / lenSq : -1;
                 let xx, yy;
-                if (param < 0) { xx = x1; yy = y1; }
-                else if (param > 1) { xx = x2; yy = y2; }
-                else { xx = x1 + param * C; yy = y1 + param * D; }
-                const dx = mx - xx, dy = my - yy;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < best.dist) { best = { idx: i, dist }; }
+                if (param < 0) {
+                    xx = x1;
+                    yy = y1;
+                } else if (param > 1) {
+                    xx = x2;
+                    yy = y2;
+                } else {
+                    xx = x1 + param * C;
+                    yy = y1 + param * D;
+                }
+                const dx = mx - xx,
+                    dy = my - yy;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < best.dist) {
+                    best = { idx: i, dist };
+                }
             }
         }
-        if (best.idx !== -1 && best.dist <= hoverTolerance) return best.idx;
+        if (best.idx !== -1 && best.dist <= this.hoverTolerance)
+            return best.idx;
         return -1;
-    };
+    }
 
-    const throttledMouse = throttle(function(event) {
-        const rect = canvas.getBoundingClientRect();
+    // mousemove handler: find nearest polyline and show tooltip with row name
+    _onMouseMove(event) {
+        const rect = this.canvas.getBoundingClientRect();
         const mx = event.clientX - rect.left;
         const my = event.clientY - rect.top;
-        const u = utils();
-        const allDataSets = typeof u.allDataSets === "function" ? (u.allDataSets() || []) : (u.allDataSets || []);
-        const colors = u.colorsPerDataSet || u.colors || {};
-        const idx = findNearest(mx, my, colors, allDataSets);
+        const u = this.utils();
+        const idx = this._findNearest(mx, my);
         if (idx >= 0) {
-            const name = data[idx] && data[idx].name ? data[idx].name : "";
-            tooltip.html(name)
-                .style("left", (event.pageX + 12) + "px")
-                .style("top", (event.pageY + 6) + "px")
+            const name =
+                this.data[idx] && this.data[idx].name
+                    ? this.data[idx].name
+                    : "";
+            this.tooltip
+                .html(name)
+                .style("left", event.pageX + 12 + "px")
+                .style("top", event.pageY + 6 + "px")
                 .style("display", "block")
                 .style("opacity", 1);
         } else {
-            tooltip.style("opacity", 0).on("transitionend", function(event) {
-                if (event.propertyName === "opacity" && tooltip.style("opacity") === "0") {
-                    tooltip.style("display", "none");
-                    tooltip.on("transitionend", null);
-                }
-            });
+            this._hideTooltip();
         }
-    }, 60);
-
-    canvas.addEventListener('mousemove', throttledMouse);
-    canvas.addEventListener('mouseleave', function() {
-        tooltip.style("opacity", 0).on("transitionend", function(event) {
-            if (event.propertyName === "opacity" && tooltip.style("opacity") === "0") {
-                tooltip.style("display", "none");
-                tooltip.on("transitionend", null);
-            }
-        });
-    });
-
-    // main updater that matches scatter logic for visibility and coloring
-    function updateParallel() {
-        const u = utils();
-        let allDataSets = typeof u.allDataSets === "function" ? (u.allDataSets() || []) : (u.allDataSets || []);
-        const colors = u.colorsPerDataSet || u.colors || {};
-
-        // update legend to reflect current state
-        renderLegend(allDataSets, colors);
-
-        // draw to canvas using current hiddenDatasets/colors
-        drawCanvas(allDataSets, colors);
     }
 
-    // initial call
-    updateParallel();
+    _hideTooltip() {
+        this.tooltip.style("opacity", 0).on("transitionend", (ev) => {
+            if (
+                ev &&
+                ev.propertyName === "opacity" &&
+                this.tooltip.style("opacity") === "0"
+            ) {
+                this.tooltip.style("display", "none");
+                this.tooltip.on("transitionend", null);
+            }
+        });
+    }
 
-    // Return updater for external calls (same contract as original)
-    return function () {
-        updateParallel();
-    };
+    // Aggregates utils -> datasets/colors and performs legend render + canvas draw
+    update() {
+        const u = this.utils();
+        const allDataSets =
+            typeof u.allDataSets === "function"
+                ? u.allDataSets() || []
+                : u.allDataSets || [];
+        const colors = u.colorsPerDataSet || u.colors || {};
+
+        // update legend UI and redraw canvas based on legend state
+        this.legend.render(allDataSets, colors);
+        this.drawCanvas(allDataSets, colors);
+    }
+
+    // Expose a cleanup method in case consumers want to remove listeners (not required by original contract)
+    destroy() {
+        this.canvas.removeEventListener("mousemove", this._throttledMouse);
+        this.canvas.removeEventListener("mouseleave", this._hideTooltip);
+        this.tooltip.remove();
+        this.svg.remove();
+        d3.select(this.canvas).remove();
+        if (this.legend && typeof this.legend.destroy === "function")
+            this.legend.destroy();
+    }
 }
+
+export const parallelCoordinates = {
+    plotName: "Parallel Coordinates",
+    fields: [
+        { fieldType: "numerical", isRequired: true, fieldName: "1st axis" },
+        { fieldType: "numerical", isRequired: true, fieldName: "2nd axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "3rd axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "4th axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "5th axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "6th axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "7th axis" },
+        { fieldType: "numerical", isRequired: false, fieldName: "8th axis" },
+    ],
+    options: [],
+    height: 2,
+    width: 1,
+    plotClass: ParallelCoordinates,
+};
