@@ -1,0 +1,15 @@
+{
+    "short_name": "Plot Twist",
+    "name": "Plot Twist",
+    "description": "PlotTwist is a tool for visualizing complex data interactively with multi-view support.",
+    "icons": [
+        {
+            "src": "assets/icon.png",
+            "type": "image/png",
+            "sizes": "192x192"
+        }
+    ],
+    "start_url": "/?utm_source=homescreen",
+    "background_color": "#fafafa",
+    "theme_color": "#fafafa"
+}
