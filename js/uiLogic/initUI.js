@@ -15,13 +15,16 @@ import { websocketCommunication } from "../core/websocketCommunication.js";
  * initializes all the ui components
  */
 export function initializeUI(plots, url) {
+    let wsUrl = `ws://` + url;
     let websocketCommunicationRef = {
-        eventsCoordinator: new websocketCommunication(plots, url)
+        eventsCoordinator: new websocketCommunication(plots, wsUrl),
     };
 
+    let httpUrl = `http://` + url;
     initTopBarScroll();
     initLinkMenuResize();
     initExportLayout();
+    initKillSession(httpUrl);
     initLoadLayout(websocketCommunicationRef);
     initGridResizing(websocketCommunicationRef);
     initLoadCsv(websocketCommunicationRef);
@@ -34,6 +37,23 @@ export function initializeUI(plots, url) {
  */
 export function createWebSocketConnection(eventsCoordinatorRef) {
     eventsCoordinatorRef.eventsCoordinator.createWebSocketConnection()
+}
+
+/**
+ * kills the current backend session and resets it when pressed
+ */
+export function initKillSession(url) {
+    const btn = document.getElementById("kill-session-btn");
+
+    btn.addEventListener("click", async () => {
+        try {
+            await fetch(`${url}reset`, {
+                method: "POST",
+            });
+        } catch (e) {
+            console.error("Reset request failed", e);
+        }
+    });
 }
 
 /**

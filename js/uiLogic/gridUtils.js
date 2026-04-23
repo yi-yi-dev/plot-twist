@@ -86,7 +86,7 @@ function createPlot(selectedPlot, plotCoordinator, gridPos, selectedFields, sele
     innerPlotContainer.style.height = `${350*selectedPlot.height+(selectedPlot.height-1)*15-43}px`;
     plotDiv.appendChild(innerPlotContainer);
 
-    let updateFunction = selectedPlot.createPlotFunction(
+    let plotInstance = new selectedPlot.plotClass(
         selectedFields,
         selectedCheckBoxes,
         innerPlotContainer,
@@ -94,15 +94,12 @@ function createPlot(selectedPlot, plotCoordinator, gridPos, selectedFields, sele
         (selection)=> {
             plotCoordinator.throttledUpdatePlotsView(id, selection);
         },
-        // (entry) => {
-        //     return plotCoordinator.isSelected(entry);
-        // },
         () => {
             return plotCoordinator.plotUtils();
         },
     );
 
-    plotCoordinator.addPlot(id, updateFunction);
+    plotCoordinator.addPlot(id, () => plotInstance.update());
 }
 
 function createPlotWithErrorHandling(selectedPlot, plotCoordinator, gridPos, plotTypes, selectedFields, selectedCheckBoxes) {
@@ -251,7 +248,7 @@ function createFieldSelectionMenu(selectedPlot, pcRef, gridPos, TODO, eventsCoor
 
     createButton.classList.add("plot-button", "create-plot-button");
 
-    // Add the "back" button at the button
+    // Add the "back" button at the bottom
     const cancelButton = document.createElement("button");
     cancelButton.textContent = "Back";
     cancelButton.classList.add("plot-button", "cancel-button");
@@ -340,14 +337,13 @@ export function createEmptyGridCell({ col, row }, eventsCoordinatorRef) {
  * creates the default plot-less 3x3 grid
  */
 export function createEmptyGrid(eventsCoordinatorRef, gridDimensions = { col: -1, row: -1 }) {
-
     const containerId = "plotsContainer";
     const container = document.getElementById(containerId);
 
     const defaultCol = Math.max(1, Math.floor(window.innerWidth / 350));
-    const defaultRow = Math.max(1,Math.floor(window.innerHeight / 350));
+    const defaultRow = Math.max(1, Math.floor(window.innerHeight / 350));
 
-    if(gridDimensions.col===-1 && gridDimensions.row===-1){
+    if (gridDimensions.col === -1 && gridDimensions.row === -1) {
         gridDimensions.col = defaultCol;
         gridDimensions.row = defaultRow;
     }
@@ -358,6 +354,7 @@ export function createEmptyGrid(eventsCoordinatorRef, gridDimensions = { col: -1
     for (let col = 1; col <= gridDimensions.col; col++) {
         for (let row = 1; row <= gridDimensions.row; row++) {
             // TODO: add another menu for selecting dataset
+
             createEmptyGridCell({ col, row }, eventsCoordinatorRef);
         }
     }
