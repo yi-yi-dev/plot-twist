@@ -3,15 +3,17 @@ import { parallelCoordinates } from "./plots/parallelCoordinates.js";
 import { histogram } from "./plots/histogram.js";
 import { barPlot } from "./plots/barPlot.js";
 import { initializeUI } from "./uiLogic/initUI.js";
+import { ejemploTabla } from "./plots/example.js";
 
 function run(){
     let plots = [
         scatterPlot,
         histogram,
         barPlot,
-        parallelCoordinates
+        parallelCoordinates,
+        ejemploTabla
     ];
-    let ip = "localhost";
+    let ip = "190.225.202.207";
     let url = `${ip}:5226/`;
     initializeUI(plots, url);
 }
