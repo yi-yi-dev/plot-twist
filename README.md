@@ -6,9 +6,9 @@
 
 PlotTwist lets several people explore related CSV tables at the same time. Brush a region in any plot and the matching rows light up in every other plot, on your screen and on everyone else's.
 
-[![PlotTwist demo](frontend/assets/demo/plottwist-preview.gif)](frontend/assets/demo/plottwist-demo.mp4)
+https://github.com/user-attachments/assets/99ff9bad-c4c1-4bcd-af79-6230571ec2b0
 
-[Full demo video (2 min)](frontend/assets/demo/plottwist-demo.mp4)
+Also on [YouTube](https://www.youtube.com/watch?v=4oBw2toIiUc).
 
 ## Running it
 
