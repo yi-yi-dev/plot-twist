@@ -1,4 +1,3 @@
-import throttle from "lodash-es/throttle.js";
 import { makeAdaptiveThrottle } from "./adaptiveThrottle.js";
 
 /**
@@ -274,42 +273,62 @@ export class PlotCoordinator {
         return true;
     }
 
-    // throttledUpdatePlotsView = throttle(this.updatePlotsView, 70);
-    throttledUpdatePlotsView = makeAdaptiveThrottle(this.updatePlotsView);
+    // Latest selection per plot (id 0 = server), so throttling never drops one source's update for another's
+    _pendingSelections = new Map();
+    _throttledFlush = makeAdaptiveThrottle(this._flushPendingSelections);
+
+    throttledUpdatePlotsView(triggeringPlotId, newSelection) {
+        this._pendingSelections.set(triggeringPlotId, newSelection);
+        this._throttledFlush();
+    }
+
+    _flushPendingSelections() {
+        const pending = [...this._pendingSelections].filter(([id]) => this._plots.has(id));
+        this._pendingSelections.clear();
+        if (pending.length) this._updatePlotsView(pending);
+    }
 
     updatePlotsView(triggeringPlotId, newSelection) {
-        const t0 = Date.now();
+        this._updatePlotsView([[triggeringPlotId, newSelection]]);
+    }
 
-        this._plots.get(triggeringPlotId).lastSelectionRange = newSelection;
+    _updatePlotsView(selections) {
+        const t0 = Date.now();
+        const isLocal = selections.some(([id]) => id !== 0);
 
         this._benchMark("preIndexUpdate");
-        let lastSelectedIndexes = this._plots.get(triggeringPlotId).lastIndexesSelected;
+        for (const [triggeringPlotId, newSelection] of selections) {
+            const plot = this._plots.get(triggeringPlotId);
+            plot.lastSelectionRange = newSelection;
 
-        let newlySelectedIndexes = this._entries.map((d, i) =>
-            this._isSelectedRange(this._entries[i], newSelection, i)
-        );
+            let lastSelectedIndexes = plot.lastIndexesSelected;
 
-        for (let idx = 0; idx < lastSelectedIndexes.length; idx++){
-            let isSelected = lastSelectedIndexes[idx];
-            if(isSelected){
-                this._entrySelectionTracker[idx]--;
+            let newlySelectedIndexes = this._entries.map((d, i) =>
+                this._isSelectedRange(this._entries[i], newSelection, i)
+            );
+
+            for (let idx = 0; idx < lastSelectedIndexes.length; idx++){
+                let isSelected = lastSelectedIndexes[idx];
+                if(isSelected){
+                    this._entrySelectionTracker[idx]--;
+                }
             }
-        }
-        for (let idx = 0; idx < newlySelectedIndexes.length; idx++){
-            let isSelected = newlySelectedIndexes[idx];
-            if(isSelected){
-                this._entrySelectionTracker[idx]++;
+            for (let idx = 0; idx < newlySelectedIndexes.length; idx++){
+                let isSelected = newlySelectedIndexes[idx];
+                if(isSelected){
+                    this._entrySelectionTracker[idx]++;
+                }
             }
+            plot.lastIndexesSelected = newlySelectedIndexes;
         }
-        this._plots.get(triggeringPlotId).lastIndexesSelected = newlySelectedIndexes;
         // the id 0 is reserved for server communication
-        if(triggeringPlotId !== 0){
+        if(isLocal){
             // the selection is sent to the server before updating the rest of the plots
             this._onSelectionFunction();
         }
 
         this._benchMark("postIndexUpdate");
-        this.BENCHMARK.afterIndexesFun("postIndex", triggeringPlotId!==0);
+        this.BENCHMARK.afterIndexesFun("postIndex", isLocal);
 
         this._benchMark("prePlotsUpdate");
         for (let [plotToUpdateId, plot] of this._plots.entries()) {
@@ -318,11 +337,11 @@ export class PlotCoordinator {
         }
 
         this._benchMark("postPlotsUpdate");
-        this.BENCHMARK.afterPlotFun("postPlots", triggeringPlotId!==0);
+        this.BENCHMARK.afterPlotFun("postPlots", isLocal);
 
         const elapsed = Date.now() - t0; // ms
-        this.throttledUpdatePlotsView.report(elapsed);
-        this.throttledUpdatePlotsView.enable(!this.BENCHMARK.isActive);
+        this._throttledFlush.report(elapsed);
+        this._throttledFlush.enable(!this.BENCHMARK.isActive);
     }
 
     fields() {

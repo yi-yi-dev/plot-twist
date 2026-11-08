@@ -32,6 +32,7 @@ export function initializeUI(plots, url) {
     initLoadCsv(websocketCommunicationRef);
     initLoadDemo(websocketCommunicationRef);
     createWebSocketConnection(websocketCommunicationRef);
+    document.body.classList.remove("loading");
 }
 
 /**
@@ -214,6 +215,7 @@ function hideLanding() {
     document.getElementById("loadDemo").style.display = "none";
     document.getElementById("loadAirQualityDemo").style.display = "none";
     document.getElementById("landing").style.display = "none";
+    document.querySelector("#landing video").pause();
 }
 
 function loadDemo(eventsCoordinatorRef, dataSets, layout, links = []) {
