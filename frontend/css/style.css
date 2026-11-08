@@ -223,7 +223,7 @@ body{
     background-color: #e9eaf2;
 }
 
-.landing-video iframe {
+.landing-video video {
     position: absolute;
     inset: 0;
     width: 100%;
